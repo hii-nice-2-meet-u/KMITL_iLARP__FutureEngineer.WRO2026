@@ -1,0 +1,20 @@
+ARG BASE_IMAGE=cross-pi
+FROM ${BASE_IMAGE} AS builder
+
+WORKDIR /code
+
+COPY . /code/
+
+ENV BUILD_DIR=/code/build
+ENV INSTALL_DIR=/code/install
+
+RUN mkdir -p $BUILD_DIR \
+    && cd $BUILD_DIR \
+    && cmake -DCMAKE_TOOLCHAIN_FILE=$CROSS_TOOLCHAIN \
+    -DCMAKE_INSTALL_PREFIX=$INSTALL_DIR \
+    .. \
+    && cmake --build $BUILD_DIR -j $(nproc) \
+    && cmake --install $BUILD_DIR
+
+FROM scratch
+COPY --from=builder /code/install /install

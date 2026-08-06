@@ -1,3 +1,3 @@
 [submodule "lib/LCCV"]
-	path = code/lib/LCCV
+	path = code/external/LCCV
 	url = https://github.com/JUKKRUW/LCCV.git

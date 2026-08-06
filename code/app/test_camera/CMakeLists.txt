@@ -1,14 +1,15 @@
 add_executable(test_camera  main.cpp)
 
 target_include_directories(test_camera PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/external/LCCV/include
     ${OpenCV_INCLUDE_DIRS}
     ${LIBCAMERA_INCLUDE_DIRS}
 )
 
 target_link_libraries(test_camera PRIVATE
-    lccv
+    liblccv
     ${OpenCV_LIBS}
     ${LIBCAMERA_LIBRARIES}
-    pthread
 )
+
+install(TARGETS test_camera DESTINATION app/test_camera)
