@@ -1,3 +1,6 @@
 [submodule "lib/LCCV"]
 	path = code/external/LCCV
 	url = https://github.com/JUKKRUW/LCCV.git
+[submodule "code/external/rplidar_sdk"]
+	path = code/external/rplidar_sdk
+	url = https://github.com/slamtec/rplidar_sdk
