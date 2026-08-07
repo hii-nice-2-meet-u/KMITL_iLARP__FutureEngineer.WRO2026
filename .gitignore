@@ -1,3 +1,5 @@
 /code/build
 /.vscode
 /dist/*
+
+/compile_commands.json
