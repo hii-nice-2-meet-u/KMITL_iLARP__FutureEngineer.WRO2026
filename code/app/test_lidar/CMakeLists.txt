@@ -4,4 +4,4 @@ target_include_directories(test_lidar PRIVATE)
 
 target_link_libraries(test_lidar PRIVATE lidar_module)
 
-install(TARGETS test_lidar DESTINATION app/test_lidar)
+install(TARGETS test_lidar DESTINATION app)

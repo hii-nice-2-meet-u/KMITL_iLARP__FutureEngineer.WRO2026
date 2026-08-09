@@ -12,4 +12,4 @@ target_link_libraries(test_camera PRIVATE
     ${LIBCAMERA_LIBRARIES}
 )
 
-install(TARGETS test_camera DESTINATION app/test_camera)
+install(TARGETS test_camera DESTINATION app)

@@ -27,5 +27,6 @@ echo "Deploying to Raspberry Pi 5 ($PI_IP)..."
 ssh $PI_USER@$PI_IP "mkdir -p $PI_TARGET_DIR"
 rsync -avz --delete --exclude 'include/' ./dist/install/ $PI_USER@$PI_IP:$PI_TARGET_DIR/
 
-ssh "$PI_USER@$PI_IP find $PI_TARGET_DIR/app -type f -exec chmod +x {} +"
+ssh "$PI_USER@$PI_IP" \
+    "find $PI_TARGET_DIR/app -type f -exec chmod +x {} +"
 echo "SUCCESS! Deployed to Pi 5 at: $PI_TARGET_DIR"
