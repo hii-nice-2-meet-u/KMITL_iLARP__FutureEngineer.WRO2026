@@ -1,0 +1,171 @@
+#include "lidar_module.hpp"
+#include "sl_lidar_cmd.h"
+#include "sl_types.h"
+#include <sys/types.h>
+
+namespace lidar {
+LidarModule::LidarModule(std::string serial_port, std::uint32_t baud_rate)
+	: serial_port_(std::move(serial_port)), baud_rate_(baud_rate) {}
+
+LidarModule::~LidarModule() { shutdown(); }
+
+bool LidarModule::initialize() {
+	if (initialized_) {
+		std::cout << "[LidarModule] Already initialized." << std::endl;
+		return true;
+	}
+
+	auto channel = sl::createSerialPortChannel(serial_port_, baud_rate_);
+	if (!channel) {
+		std::cerr << "[LidarModule] Failed to create serial Port Channel."
+				  << std::endl;
+		return false;
+	}
+
+	serial_channel_ = *channel;
+
+	auto driver = sl::createLidarDriver();
+	if (!driver) {
+		std::cerr << "[LidarModule] Failed to create SLAMTEC LIDAR driver."
+				  << std::endl;
+		return false;
+	}
+
+	lidar_driver_ = *driver;
+
+	sl_result res = lidar_driver_->connect(serial_channel_);
+
+	if (SL_IS_FAIL(res)) {
+		std::cerr << "[LidarModule] Failed to connect to the LIDAR."
+				  << std::endl;
+		delete lidar_driver_;
+		lidar_driver_ = nullptr;
+
+		delete serial_channel_;
+		serial_channel_ = nullptr;
+		return false;
+	}
+
+	initialized_ = true;
+	return true;
+}
+
+bool LidarModule::start() {
+
+	if (!initialized_) {
+		std::cerr << "[LidarModule] Failed to start. Not initialized."
+				  << std::endl;
+		return false;
+	}
+
+	if (running_) {
+		std::cout << "[LidarModule] Already started." << std::endl;
+		return true;
+	}
+
+	lidar_driver_->setMotorSpeed(DEFAULT_MOTOR_SPEED);
+	sl_result result = lidar_driver_->startScan(0, 1);
+	if (SL_IS_FAIL(result)) {
+		std::cerr << "[LidarModule] Failed to start scan." << std::endl;
+		lidar_driver_->setMotorSpeed(0);
+		return false;
+	}
+
+	running_ = true;
+	lidar_thread_ = std::thread(&LidarModule::scan_loop, this);
+	return true;
+}
+
+void LidarModule::stop() {
+	if (!running_) {
+		std::cout << "[LidarModule] Not started." << std::endl;
+		return;
+	}
+
+	running_ = false;
+	if (lidar_thread_.joinable()) {
+		lidar_thread_.join();
+	}
+
+	if (lidar_driver_) {
+		lidar_driver_->stop();
+		lidar_driver_->setMotorSpeed(0);
+	}
+}
+
+void LidarModule::shutdown() {
+	if (running_)
+		stop();
+
+	if (lidar_driver_) {
+		lidar_driver_->disconnect();
+		delete lidar_driver_;
+		lidar_driver_ = nullptr;
+	}
+
+	if (serial_channel_) {
+		delete serial_channel_;
+		serial_channel_ = nullptr;
+	}
+
+	initialized_ = false;
+}
+
+bool LidarModule::grabScan(
+	sl_lidar_response_measurement_node_hq_t *nodes, size_t &count) {
+	return SL_IS_OK(lidar_driver_->grabScanDataHq(nodes, count));
+}
+
+void LidarModule::checkHealth() {
+	sl_lidar_response_device_health_t healthinfo;
+	if (SL_IS_OK(lidar_driver_->getHealth(healthinfo))) {
+		std::cerr << "[LidarModule] Device Health Status: ";
+		switch (healthinfo.status) {
+		case SL_LIDAR_STATUS_OK:
+			std::cerr << "OK" << healthinfo.error_code << std::endl;
+			break;
+		case SL_LIDAR_STATUS_WARNING:
+			std::cerr << "Warning" << healthinfo.error_code << std::endl;
+			break;
+		case SL_LIDAR_STATUS_ERROR:
+			std::cerr << "Error. Error Code: " << healthinfo.error_code
+					  << std::endl;
+			break;
+		}
+	} else {
+		std::cerr << "[LidarModule] [WARN] Failed to retrieve "
+					 "device health."
+				  << std::endl;
+	}
+}
+
+void LidarModule::scan_loop() {
+	size_t frame = 0;
+	size_t fail_count = 0;
+	while (running_) {
+		sl_lidar_response_measurement_node_hq_t nodes[8192];
+		size_t count = sizeof(nodes) / sizeof(nodes[0]);
+
+		if (!grabScan(nodes, count)) {
+			fail_count++;
+			if (fail_count >= 3) {
+				checkHealth();
+				fail_count = 0;
+			}
+		}
+
+		lidar_driver_->ascendScanData(nodes, count);
+		for (size_t i = 0; i < count; ++i) {
+			float angle = nodes[i].angle_z_q14 * 90.f / (1 << 14);
+			float distance = nodes[i].dist_mm_q2 / 1000.f / (1 << 2);
+			std::uint8_t quality = nodes[i].quality;
+			if (i == 0) {
+
+				printf("Frame %zu  Point %zu  Angle %.2f  Dist %.2f m  Q %u\n",
+					frame, i, angle, distance, quality);
+			}
+			frame++;
+		}
+	}
+}
+} // namespace lidar
