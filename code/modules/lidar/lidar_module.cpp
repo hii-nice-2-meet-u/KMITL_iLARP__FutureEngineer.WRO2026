@@ -1,6 +1,7 @@
 #include "lidar_module.hpp"
 #include "sl_lidar_cmd.h"
 #include "sl_types.h"
+#include <cstdint>
 #include <sys/types.h>
 
 namespace lidar {
@@ -139,33 +140,59 @@ void LidarModule::checkHealth() {
 	}
 }
 
+void LidarModule::processScan(
+	const sl_lidar_response_measurement_node_hq_t *nodes, size_t count) {
+
+	TimedLidarData data;
+	data.points.reserve(count);
+	for (size_t i = 0; i < count; ++i) {
+		LidarPoint point;
+
+		point.angle_deg = nodes[i].angle_z_q14 * 90.0f / (1 << 14);
+
+		point.distance_mm = nodes[i].dist_mm_q2 / 1000.0f / (1 << 2); // meter
+
+		point.quality = nodes[i].quality;
+
+		data.points.push_back(point);
+	}
+	const auto now = std::chrono::steady_clock::now().time_since_epoch();
+
+	data.timestamp_us =
+		std::chrono::duration_cast<std::chrono::microseconds>(now).count();
+
+	{
+		std::lock_guard<std::mutex> lock(data_mutex_);
+		data_buffer_.push(std::move(data));
+	}
+
+	data_updated_.notify_one();
+}
+
 void LidarModule::scan_loop() {
-	size_t frame = 0;
-	size_t fail_count = 0;
+	std::uint8_t fail_count = 0;
 	while (running_) {
 		sl_lidar_response_measurement_node_hq_t nodes[8192];
 		size_t count = sizeof(nodes) / sizeof(nodes[0]);
 
 		if (!grabScan(nodes, count)) {
-			fail_count++;
+			++fail_count;
 			if (fail_count >= 3) {
 				checkHealth();
 				fail_count = 0;
 			}
 		}
 
+		fail_count = 0;
 		lidar_driver_->ascendScanData(nodes, count);
-		for (size_t i = 0; i < count; ++i) {
-			float angle = nodes[i].angle_z_q14 * 90.f / (1 << 14);
-			float distance = nodes[i].dist_mm_q2 / 1000.f / (1 << 2);
-			std::uint8_t quality = nodes[i].quality;
-			if (i == 0) {
 
-				printf("Frame %zu  Point %zu  Angle %.2f  Dist %.2f m  Q %u\n",
-					frame, i, angle, distance, quality);
-			}
-			frame++;
-		}
+		processScan(nodes, count);
 	}
+}
+
+bool LidarModule::get_latest(TimedLidarData &data) const {
+	std::lock_guard<std::mutex> lock(data_mutex_);
+
+	return data_buffer_.latest(data);
 }
 } // namespace lidar

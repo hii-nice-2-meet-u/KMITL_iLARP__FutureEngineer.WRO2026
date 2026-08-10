@@ -7,8 +7,11 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <chrono>
 
 #include "sl_lidar_driver.h"
+#include "lidar_struct.hpp"
+#include "RingBuffer.hpp"
 
 namespace lidar {
 
@@ -28,7 +31,7 @@ class LidarModule {
 	bool start();
 	void stop();
 
-	// bool get_latest(TimedLidarData& data) const;
+	bool get_latest(TimedLidarData& data) const;
 	// bool wait_for_data(TimedLidarData& data);
 
 	// bool is_initialized() const noexcept;
@@ -59,7 +62,7 @@ class LidarModule {
 	mutable std::mutex data_mutex_;
 	std::condition_variable data_updated_;
 
-	// RingBuffer<TimedLidarData> data_buffer_{10};
+	RingBuffer<TimedLidarData, 10> data_buffer_;
 };
 
 } // namespace lidar

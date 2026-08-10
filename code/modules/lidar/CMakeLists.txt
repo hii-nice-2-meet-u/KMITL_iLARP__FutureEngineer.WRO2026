@@ -11,5 +11,6 @@ target_include_directories(rplidar_sdk PUBLIC ${RPLIDAR_SDK_PATH}/include
 
 add_library(lidar_module STATIC lidar_module.cpp lidar_module.hpp)
 target_include_directories(lidar_module PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
-                                               ${CMAKE_SOURCE_DIR}/src/types)
+                                               ${CMAKE_SOURCE_DIR}/types
+											   ${CMAKE_SOURCE_DIR}/utils)
 target_link_libraries(lidar_module PUBLIC rplidar_sdk )
