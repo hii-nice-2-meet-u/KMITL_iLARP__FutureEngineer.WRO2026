@@ -6,7 +6,7 @@
 struct LidarPoint
 {
     float angle_deg{0.0f};
-    float distance_mm{0.0f};
+    float distance_m{0.0f};
     std::uint8_t quality{0};
 };
 

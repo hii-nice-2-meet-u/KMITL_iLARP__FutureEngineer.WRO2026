@@ -1,17 +1,17 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <cstdint>
 #include <iostream>
 #include <mutex>
 #include <string>
 #include <thread>
-#include <chrono>
 
-#include "sl_lidar_driver.h"
-#include "lidar_struct.hpp"
 #include "RingBuffer.hpp"
+#include "lidar_struct.hpp"
+#include "sl_lidar_driver.h"
 
 namespace lidar {
 
@@ -31,8 +31,8 @@ class LidarModule {
 	bool start();
 	void stop();
 
-	bool get_latest(TimedLidarData& data) const;
-	// bool wait_for_data(TimedLidarData& data);
+	bool get_latest(TimedLidarData &data) const;
+	bool wait_for_data(TimedLidarData &data);
 
 	// bool is_initialized() const noexcept;
 	// bool is_running() const noexcept;
@@ -63,6 +63,9 @@ class LidarModule {
 	std::condition_variable data_updated_;
 
 	RingBuffer<TimedLidarData, 10> data_buffer_;
+
+	std::uint64_t data_sequence_{0};
+	std::uint64_t last_read_sequence_{0};
 };
 
 } // namespace lidar

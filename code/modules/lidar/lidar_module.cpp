@@ -2,6 +2,7 @@
 #include "sl_lidar_cmd.h"
 #include "sl_types.h"
 #include <cstdint>
+#include <mutex>
 #include <sys/types.h>
 
 namespace lidar {
@@ -84,6 +85,8 @@ void LidarModule::stop() {
 	}
 
 	running_ = false;
+
+	data_updated_.notify_all();
 	if (lidar_thread_.joinable()) {
 		lidar_thread_.join();
 	}
@@ -150,7 +153,8 @@ void LidarModule::processScan(
 
 		point.angle_deg = nodes[i].angle_z_q14 * 90.0f / (1 << 14);
 
-		point.distance_mm = nodes[i].dist_mm_q2 / 1000.0f / (1 << 2); // meter
+		point.distance_m = nodes[i].dist_mm_q2 / 1000.0f / (1 << 2); // meter
+		// point.distance_m = nodes[i].dist_mm_q2 / (1 << 2);			 // mm
 
 		point.quality = nodes[i].quality;
 
@@ -164,6 +168,7 @@ void LidarModule::processScan(
 	{
 		std::lock_guard<std::mutex> lock(data_mutex_);
 		data_buffer_.push(std::move(data));
+		++data_sequence_;
 	}
 
 	data_updated_.notify_one();
@@ -181,18 +186,38 @@ void LidarModule::scan_loop() {
 				checkHealth();
 				fail_count = 0;
 			}
+			continue;
 		}
 
 		fail_count = 0;
-		lidar_driver_->ascendScanData(nodes, count);
-
+		if (SL_IS_FAIL(lidar_driver_->ascendScanData(nodes, count))) {
+			continue;
+		}
 		processScan(nodes, count);
 	}
 }
 
 bool LidarModule::get_latest(TimedLidarData &data) const {
 	std::lock_guard<std::mutex> lock(data_mutex_);
-
 	return data_buffer_.latest(data);
+}
+
+bool LidarModule::wait_for_data(TimedLidarData &data) {
+	std::unique_lock<std::mutex> lock(data_mutex_);
+
+	data_updated_.wait(lock,
+		[&] { return data_sequence_ != last_read_sequence_ || !running_; });
+
+	if (!running_) {
+		return false;
+	}
+
+	if (!data_buffer_.latest(data)) {
+		return false;
+	}
+
+	last_read_sequence_ = data_sequence_;
+
+	return true;
 }
 } // namespace lidar
