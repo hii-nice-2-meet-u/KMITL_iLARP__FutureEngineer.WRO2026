@@ -25,14 +25,17 @@ int main() {
 			break;
 		}
 
-		std::cout << "Frame: " << frame << " | Points: " << data.points.size();
+		std::cout << "Frame: " << frame << " | Points: " << data.points.size() << '\n';
 
 		if (!data.points.empty()) {
-			const auto &point = data.points.front();
+			const auto &point = data.points[data.points.size()/4];
+			// const auto &point = data.points.back();
 
 			std::cout << " angle=" << point.angle_deg
 					  << " deg" << " distance=" << point.distance_m
 					  << " quality=" << static_cast<int>(point.quality) << '\n';
+
+			
 		}
 	}
 
