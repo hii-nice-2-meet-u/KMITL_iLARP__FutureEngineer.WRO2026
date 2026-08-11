@@ -11,5 +11,8 @@ target_link_libraries(test_camera PRIVATE
     ${OpenCV_LIBS}
     ${LIBCAMERA_LIBRARIES}
 )
+set_target_properties(test_camera PROPERTIES
+    INSTALL_RPATH "$ORIGIN/../lib"
+)
 
 install(TARGETS test_camera DESTINATION app)

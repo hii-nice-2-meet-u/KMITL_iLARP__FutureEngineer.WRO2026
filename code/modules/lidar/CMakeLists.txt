@@ -9,8 +9,7 @@ add_library(rplidar_sdk STATIC ${RPLIDAR_SDK_SOURCES})
 target_include_directories(rplidar_sdk PUBLIC ${RPLIDAR_SDK_PATH}/include
                                               ${RPLIDAR_SDK_PATH}/src)
 
-add_library(lidar_module STATIC lidar_module.cpp lidar_module.hpp)
+add_library(lidar_module STATIC lidar_module.cpp lidar_module.hpp lidar_worker.cpp lidar_worker.hpp)
 target_include_directories(lidar_module PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
-                                               ${CMAKE_SOURCE_DIR}/types
 											   ${CMAKE_SOURCE_DIR}/utils)
 target_link_libraries(lidar_module PUBLIC rplidar_sdk )
