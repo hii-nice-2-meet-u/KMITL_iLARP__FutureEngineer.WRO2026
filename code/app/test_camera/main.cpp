@@ -56,12 +56,12 @@ int main() {
 
 	// init cam
 	lccv::PiCamera cam;
-	cam.options->video_width = 640;
-	cam.options->video_height = 640;
-	cam.options->framerate = 100;
+	cam.options->video_width = 1920;
+	cam.options->video_height = 1080;
+	cam.options->framerate = 90;
 	cam.options->verbose = true;
-	cam.options->awb_gain_r = 1.0f;
-	cam.options->awb_gain_b = 1.0f;
+	// cam.options->awb_gain_r = 1.0f;
+	// cam.options->awb_gain_b = 1.0f;
 
 	libcamera::ControlList &controls = cam.getControlList();
 	controls.set(
@@ -89,28 +89,28 @@ int main() {
 			// 	cv::Scalar(179, 255, 255), mask2);
 			// redMask = mask1 | mask2;
 
-			cv::inRange(hsvImage, cv::Scalar(11, 79, 37),
-				cv::Scalar(22, 255, 255), redMask);
+			// cv::inRange(hsvImage, cv::Scalar(11, 79, 37),
+			// 	cv::Scalar(22, 255, 255), redMask);
 
-			cv::inRange(hsvImage, cv::Scalar(52, 100, 53),
-				cv::Scalar(116, 255, 255), green_mask);
+			// cv::inRange(hsvImage, cv::Scalar(52, 100, 53),
+			// 	cv::Scalar(116, 255, 255), green_mask);
 
-			findFirstRectangle(redMask, red_rects);
-			findFirstRectangle(green_mask, green_rects);
-			all_rects.clear();
-			all_rects.insert(
-				all_rects.end(), red_rects.begin(), red_rects.end());
-			all_rects.insert(
-				all_rects.end(), green_rects.begin(), green_rects.end());
+			// findFirstRectangle(redMask, red_rects);
+			// findFirstRectangle(green_mask, green_rects);
+			// all_rects.clear();
+			// all_rects.insert(
+			// 	all_rects.end(), red_rects.begin(), red_rects.end());
+			// all_rects.insert(
+			// 	all_rects.end(), green_rects.begin(), green_rects.end());
 
-			for (const auto &rect : all_rects) {
-				cv::rectangle(frame, rect, cv::Scalar(0, 255, 0), 3);
-			}
+			// for (const auto &rect : all_rects) {
+			// 	cv::rectangle(frame, rect, cv::Scalar(0, 255, 0), 3);
+			// }
 			// cv::rectangle(frame, red_Rect, cv::Scalar(0, 0, 255), 2);
 			// cv::rectangle(frame, green_Rect, cv::Scalar(0, 0, 255), 2);
 			cv::imshow("Frame ", frame);
-			cv::imshow("Red Mask", redMask);
-			cv::imshow("Green Mask", green_mask);
+			// cv::imshow("Red Mask", redMask);
+			// cv::imshow("Green Mask", green_mask);
 		}
 		char key = (char)cv::waitKey(1);
 		if (key == 's') {
@@ -126,7 +126,6 @@ int main() {
 
 		if (key == 'q')
 			break;
-		
 	}
 
 	cam.stopVideo();
