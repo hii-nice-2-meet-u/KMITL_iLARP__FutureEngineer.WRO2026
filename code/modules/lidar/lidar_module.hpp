@@ -7,11 +7,14 @@
 #include <iostream>
 #include <mutex>
 #include <string>
+#include <sys/types.h>
 #include <thread>
 
 #include "RingBuffer.hpp"
 #include "lidar_struct.hpp"
+#include "sl_lidar_cmd.h"
 #include "sl_lidar_driver.h"
+#include "sl_types.h"
 
 namespace lidar {
 

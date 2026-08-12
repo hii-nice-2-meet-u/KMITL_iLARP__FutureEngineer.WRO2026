@@ -1,9 +1,4 @@
 #include "lidar_module.hpp"
-#include "sl_lidar_cmd.h"
-#include "sl_types.h"
-#include <cstdint>
-#include <mutex>
-#include <sys/types.h>
 
 namespace lidar {
 LidarModule::LidarModule(std::string serial_port, std::uint32_t baud_rate)

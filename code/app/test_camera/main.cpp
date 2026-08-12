@@ -9,6 +9,7 @@
 #include "opencv2/imgcodecs.hpp"
 #include "opencv2/imgproc.hpp"
 #include <opencv2/opencv.hpp>
+#include <string>
 
 std::string generateHexID() {
 	std::random_device rd;
@@ -60,6 +61,7 @@ int main() {
 	cam.options->video_height = 1080;
 	cam.options->framerate = 90;
 	cam.options->verbose = true;
+	cam.options->setWhiteBalance(WB_INDOOR)
 	// cam.options->awb_gain_r = 1.0f;
 	// cam.options->awb_gain_b = 1.0f;
 
@@ -76,7 +78,7 @@ int main() {
 		green_mask;
 	std::vector<cv::Rect> red_rects, green_rects, all_rects;
 	// cv::namedWindow("Frame vs Red Mask", cv::WINDOW_NORMAL);
-
+	int couttttttt = 0;
 	while (true) {
 		if (cam.getVideoFrame(frame, 1000)) {
 			cv::flip(frame, frame, 0);
@@ -114,14 +116,16 @@ int main() {
 		}
 		char key = (char)cv::waitKey(1);
 		if (key == 's') {
-			std::string hex_id = generateHexID();
-			std::string file_path = folder_path + "img_" + hex_id + ".jpg";
+			// std::string hex_id = generateHexID();
+			std::string file_path =
+				folder_path + "img_" + std::to_string(couttttttt) + ".jpg";
 
 			if (cv::imwrite(file_path, frame)) {
 				std::cout << "Saved: " << file_path << std::endl;
 			} else {
 				std::cerr << "Error saving image to " << file_path << std::endl;
 			}
+			couttttttt++;
 		}
 
 		if (key == 'q')
