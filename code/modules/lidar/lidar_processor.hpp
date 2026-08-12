@@ -1,6 +1,8 @@
 #pragma once
 
 #include "lidar_struct.hpp"
+#include <algorithm>
+#include <cmath>
 #include <vector>
 
 namespace lidar {
@@ -31,11 +33,15 @@ struct ProcessedLidarData {
 };
 class LidarProcessor {
   public:
+	ProcessedLidarData process(const TimedLidarData &point) const;
+
   private:
 	bool is_valid_point(const LidarPoint &point) const;
+
 	CartesianPoint polar2cartesian(const LidarPoint &lidar_point) const;
+
 	std::vector<CartesianPoint> get_sector(
-		TimedLidarData &data, float start_angle, float end_angle) const;
+		const TimedLidarData &data, float start_angle, float end_angle) const;
 
 	float median_distance(const std::vector<CartesianPoint> &points) const;
 
@@ -43,6 +49,6 @@ class LidarProcessor {
 		const std::vector<CartesianPoint> &points) const;
 
 	WallEstimate fit_wall(const std::vector<CartesianPoint> &points) const;
-}
+};
 
 } // namespace lidar

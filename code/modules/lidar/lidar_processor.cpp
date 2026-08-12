@@ -1,21 +1,44 @@
 #include "lidar_processor.hpp"
-#include "lidar_struct.hpp"
-#include <cmath>
+
 
 namespace lidar {
-LidarProcessor::is_valid_point(const LidarPoint &point) const {
+ProcessedLidarData LidarProcessor::process(const TimedLidarData &data) const {
+	ProcessedLidarData result;
+	result.timestamp_us = data.timestamp_us;
+
+	const auto front_points = get_sector(data, 340.0f, 20.0f);
+	const auto right_points = get_sector(data, 70.0f, 110.0f);
+	const auto left_points = get_sector(data, 250.0f, 290.0f);
+
+	result.front_distance_m = median_distance(front_points);
+	result.left_distance_m = median_distance(left_points);
+	result.right_distance_m = median_distance(right_points);
+
+	const auto left_candidates = extract_wall_candidates(left_points);
+
+	const auto right_candidates = extract_wall_candidates(right_points);
+
+	const auto front_candidates = extract_wall_candidates(front_points);
+
+	result.left_wall = fit_wall(left_candidates);
+	result.right_wall = fit_wall(right_candidates);
+	result.front_wall = fit_wall(front_candidates);
+
+	return result;
+}
+bool LidarProcessor::is_valid_point(const LidarPoint &point) const {
 	if (point.quality < 50)
 		return false;
-	if (point.distance_m < 0.01)
+	if (point.distance_m < 0.01f)
 		return false;
-	if (point.distance_m <= 0.0f)
-		return false;
+	// if (point.distance_m <= 0.0f)
+	// 	return false;
 
 	// if (point.angle_deg) return false;  // ซักอย่าง ลืม
 	return true;
 }
 
-CartesianPoint polar2cartesian(const LidarPoint &point) const {
+CartesianPoint LidarProcessor::polar2cartesian(const LidarPoint &point) const {
 	CartesianPoint result;
 	result.angle_deg = point.angle_deg;
 	result.distance_m = point.distance_m;
@@ -25,8 +48,8 @@ CartesianPoint polar2cartesian(const LidarPoint &point) const {
 
 	return result;
 }
-std::vector<CartesianPoint> get_sector(
-	TimedLidarData &data, float start_angle, float end_angle) const {
+std::vector<CartesianPoint> LidarProcessor::get_sector (
+	const TimedLidarData &data, float start_angle, float end_angle) const {
 	std::vector<CartesianPoint> result;
 
 	result.reserve(data.points.size());
@@ -39,19 +62,19 @@ std::vector<CartesianPoint> get_sector(
 		bool inside_sector = false;
 
 		// Normal sector
-		if (start_angle_deg <= end_angle_deg) {
-			inside_sector = point.angle_deg >= start_angle_deg &&
-				point.angle_deg <= end_angle_deg;
+		if (start_angle <= end_angle) {
+			inside_sector = point.angle_deg >= start_angle &&
+				point.angle_deg <= end_angle;
 		} else { // Wrap-around sector
-			inside_sector = point.angle_deg >= start_angle_deg ||
-				point.angle_deg <= end_angle_deg;
+			inside_sector = point.angle_deg >= start_angle ||
+				point.angle_deg <= end_angle;
 		}
 
 		if (!inside_sector) {
 			continue;
 		}
 
-		result.push_back(polar_to_cartesian(point));
+		result.push_back(polar2cartesian(point));
 	}
 
 	return result;
@@ -152,4 +175,5 @@ WallEstimate LidarProcessor::fit_wall(
 
 	result.valid = true;
 	return result;
+}
 } // namespace lidar
