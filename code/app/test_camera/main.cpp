@@ -61,7 +61,7 @@ int main() {
 	cam.options->video_height = 1080;
 	cam.options->framerate = 90;
 	cam.options->verbose = true;
-	cam.options->setWhiteBalance(WB_INDOOR)
+	cam.options->setWhiteBalance(WB_INDOOR);
 	// cam.options->awb_gain_r = 1.0f;
 	// cam.options->awb_gain_b = 1.0f;
 

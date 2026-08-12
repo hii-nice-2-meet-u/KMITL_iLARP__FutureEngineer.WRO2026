@@ -1,6 +1,7 @@
 #include <iostream>
 
 #include "lidar_module.hpp"
+#include "lidar_processor.hpp"
 
 int main() {
 	lidar::LidarModule lidar;
@@ -18,31 +19,70 @@ int main() {
 	std::cout << "Waiting for LiDAR frames...\n";
 
 	for (int frame = 0; frame < 20; ++frame) {
-		TimedLidarData data;
+		TimedLidarData scan;
+		lidar::LidarProcessor lidar_processor;
 
-		if (!lidar.wait_for_data(data)) {
+		if (!lidar.wait_for_data(scan)) {
 			std::cerr << "Failed to get LiDAR data\n";
 			break;
 		}
+		float sum_distance = 0.0f;
+		std::size_t count = 0;
 
-		std::cout << "Frame: " << frame << " | Points: " << data.points.size() << '\n';
+		for (const auto &point : scan.points) {
+			if (point.angle_deg >= 85.0f && point.angle_deg <= 95.0f &&
+				point.distance_m > 0.0f) {
 
-		if (!data.points.empty()) {
-			const auto &point = data.points[data.points.size()/4];
-			// const auto &point = data.points.back();
+				sum_distance += point.distance_m;
+				++count;
+			}
+		}
+		if (count > 0) {
+			const float avg_distance = sum_distance / static_cast<float>(count);
 
-			std::cout << " angle=" << point.angle_deg
-					  << " deg" << " distance=" << point.distance_m
-					  << " quality=" << static_cast<int>(point.quality) << '\n';
+			std::cout << "Raw 90 deg AVG" << " | Distance: " << avg_distance
+					  << " m" << " | Samples: " << count << '\n';
+		} else {
+			std::cout << "Raw 90 deg AVG | No valid points\n";
+		}
 
-			
+		if (!scan.points.empty()) {
+			// const auto &point = scan.points[scan.points.size() / 4];
+			// const auto &point = scan.points.back();
+			const lidar::ProcessedLidarData processed =
+				lidar_processor.process(scan);
+
+
+							 std::cout
+					  << "Frame: " << frame
+					  << " | Points: " << scan.points.size()
+					  << " | Timestamp: " << scan.timestamp_us << '\n';
+
+			std::cout << "Distance"
+					  << " | Front: " << processed.front_distance_m << " m"
+					  << " | Left: " << processed.left_distance_m << " m"
+					  << " | Right: " << processed.right_distance_m << " m\n";
+
+			std::cout << "Left wall"
+					  << " | Valid: " << processed.left_wall.valid
+					  << " | Distance: " << processed.left_wall.distance_m
+					  << " m" << " | Angle: " << processed.left_wall.angle_deg
+					  << " deg\n";
+
+			std::cout << "Right wall"
+					  << " | Valid: " << processed.right_wall.valid
+					  << " | Distance: " << processed.right_wall.distance_m
+					  << " m" << " | Angle: " << processed.right_wall.angle_deg
+					  << " deg\n";
+
+			std::cout << "Front wall"
+					  << " | Valid: " << processed.front_wall.valid
+					  << " | Distance: " << processed.front_wall.distance_m
+					  << " m" << " | Angle: " << processed.front_wall.angle_deg
+					  << " deg\n\n";
 		}
 	}
-
 	lidar.stop();
-	lidar.shutdown();
-
-	std::cout << "Finished\n";
 
 	return 0;
 }
