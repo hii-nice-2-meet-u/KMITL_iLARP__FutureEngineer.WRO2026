@@ -2,7 +2,8 @@
 set -e
 
 PI_USER="hii"
-PI_IP="192.168.2.107"
+# PI_IP="192.168.2.107"
+PI_IP="192.168.11.147"
 PI_TARGET_DIR="/home/hii/wro2026_workspace"
 
 if [ "$1" == "clean" ]; then

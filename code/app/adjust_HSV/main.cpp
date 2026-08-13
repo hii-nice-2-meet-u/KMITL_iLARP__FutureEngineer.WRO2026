@@ -139,11 +139,11 @@ class HSVRangeHighlighter {
 
 		// Start with a resolution suitable for HSV tuning.
 		camera.options->video_width = 640;
-		camera.options->video_height = 480;
-		camera.options->framerate = 30;
+		camera.options->video_height = 640;
+		camera.options->framerate = 100;
 
-		camera.options->awb_gain_r = 1.0f;
-		camera.options->awb_gain_b = 1.0f;
+		// camera.options->awb_gain_r = 1.0f;
+		// camera.options->awb_gain_b = 1.0f;
 
 		std::cout << "Starting LCCV camera...\n";
 

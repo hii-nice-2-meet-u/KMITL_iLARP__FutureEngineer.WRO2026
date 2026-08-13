@@ -1,5 +1,5 @@
 #include "lidar_processor.hpp"
-
+#include <iostream>
 
 namespace lidar {
 ProcessedLidarData LidarProcessor::process(const TimedLidarData &data) const {
@@ -9,6 +9,17 @@ ProcessedLidarData LidarProcessor::process(const TimedLidarData &data) const {
 	const auto front_points = get_sector(data, 340.0f, 20.0f);
 	const auto right_points = get_sector(data, 70.0f, 110.0f);
 	const auto left_points = get_sector(data, 250.0f, 290.0f);
+
+	// DEBUG: Check right-sector Polar -> Cartesian conversion
+	// std::cout << "\n--- RIGHT CARTESIAN ---\n";
+
+	// for (std::size_t i = 0; i < right_points.size() ; ++i) {
+
+	// 	const auto &p = right_points[i];
+
+	// 	std::cout << "angle=" << p.angle_deg << " dist=" << p.distance_m
+	// 			  << " x=" << p.x_m << " y=" << p.y_m << '\n';
+	// }
 
 	result.front_distance_m = median_distance(front_points);
 	result.left_distance_m = median_distance(left_points);
@@ -42,13 +53,13 @@ CartesianPoint LidarProcessor::polar2cartesian(const LidarPoint &point) const {
 	CartesianPoint result;
 	result.angle_deg = point.angle_deg;
 	result.distance_m = point.distance_m;
-	float rad = point.angle_deg * static_cast<float>(M_PI) / 180.f;
-	result.x_m = point.distance_m * std::cos(point.angle_deg);
-	result.y_m = point.distance_m * std::sin(point.angle_deg);
+	const float rad = point.angle_deg * static_cast<float>(M_PI) / 180.f;
+	result.x_m = point.distance_m * std::cos(rad);
+	result.y_m = point.distance_m * std::sin(rad);
 
 	return result;
 }
-std::vector<CartesianPoint> LidarProcessor::get_sector (
+std::vector<CartesianPoint> LidarProcessor::get_sector(
 	const TimedLidarData &data, float start_angle, float end_angle) const {
 	std::vector<CartesianPoint> result;
 
@@ -63,11 +74,11 @@ std::vector<CartesianPoint> LidarProcessor::get_sector (
 
 		// Normal sector
 		if (start_angle <= end_angle) {
-			inside_sector = point.angle_deg >= start_angle &&
-				point.angle_deg <= end_angle;
+			inside_sector =
+				point.angle_deg >= start_angle && point.angle_deg <= end_angle;
 		} else { // Wrap-around sector
-			inside_sector = point.angle_deg >= start_angle ||
-				point.angle_deg <= end_angle;
+			inside_sector =
+				point.angle_deg >= start_angle || point.angle_deg <= end_angle;
 		}
 
 		if (!inside_sector) {
@@ -169,9 +180,7 @@ WallEstimate LidarProcessor::fit_wall(
 
 	result.distance_m = std::abs(intercept) / std::sqrt(slope * slope + 1.0f);
 
-	constexpr float PI = 3.14159265358979323846f;
-
-	result.angle_deg = std::atan(slope) * 180.0f / PI;
+	result.angle_deg = std::atan(slope) * 180.0f / static_cast<float>(M_PI);
 
 	result.valid = true;
 	return result;

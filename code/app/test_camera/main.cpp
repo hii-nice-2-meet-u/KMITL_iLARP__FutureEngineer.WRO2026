@@ -61,7 +61,7 @@ int main() {
 	cam.options->video_height = 1080;
 	cam.options->framerate = 90;
 	cam.options->verbose = true;
-	cam.options->setWhiteBalance(WB_INDOOR);
+	// cam.options->setWhiteBalance(WB_INDOOR);
 	// cam.options->awb_gain_r = 1.0f;
 	// cam.options->awb_gain_b = 1.0f;
 
@@ -75,7 +75,7 @@ int main() {
 	}
 
 	cv::Mat frame, hsvImage, mask1, mask2, redMask, redMaskBGR, combined,
-		green_mask;
+		green_mask, cp_frame;
 	std::vector<cv::Rect> red_rects, green_rects, all_rects;
 	// cv::namedWindow("Frame vs Red Mask", cv::WINDOW_NORMAL);
 	int couttttttt = 0;
@@ -84,30 +84,30 @@ int main() {
 			cv::flip(frame, frame, 0);
 			cv::flip(frame, frame, 1);
 			cv::cvtColor(frame, hsvImage, cv::COLOR_BGR2HSV);
-
+			// cp_frame = frame.clone();
 			// cv::inRange(hsvImage, cv::Scalar(0, 70, 50),
 			// 	cv::Scalar(10, 255, 255), mask1);
 			// cv::inRange(hsvImage, cv::Scalar(170, 70, 50),
 			// 	cv::Scalar(179, 255, 255), mask2);
 			// redMask = mask1 | mask2;
 
-			// cv::inRange(hsvImage, cv::Scalar(11, 79, 37),
-			// 	cv::Scalar(22, 255, 255), redMask);
+			cv::inRange(hsvImage, cv::Scalar(11, 79, 37),
+				cv::Scalar(22, 255, 255), redMask);
 
 			// cv::inRange(hsvImage, cv::Scalar(52, 100, 53),
-			// 	cv::Scalar(116, 255, 255), green_mask);
+				// cv::Scalar(116, 255, 255), green_mask);
 
-			// findFirstRectangle(redMask, red_rects);
+			findFirstRectangle(redMask, red_rects);
 			// findFirstRectangle(green_mask, green_rects);
-			// all_rects.clear();
+			all_rects.clear();
+			all_rects.insert(
+				all_rects.end(), red_rects.begin(), red_rects.end());
 			// all_rects.insert(
-			// 	all_rects.end(), red_rects.begin(), red_rects.end());
-			// all_rects.insert(
-			// 	all_rects.end(), green_rects.begin(), green_rects.end());
+				// all_rects.end(), green_rects.begin(), green_rects.end());
 
-			// for (const auto &rect : all_rects) {
-			// 	cv::rectangle(frame, rect, cv::Scalar(0, 255, 0), 3);
-			// }
+			for (const auto &rect : all_rects) {
+				cv::rectangle(frame, rect, cv::Scalar(0, 255, 0), 3);
+			}
 			// cv::rectangle(frame, red_Rect, cv::Scalar(0, 0, 255), 2);
 			// cv::rectangle(frame, green_Rect, cv::Scalar(0, 0, 255), 2);
 			cv::imshow("Frame ", frame);

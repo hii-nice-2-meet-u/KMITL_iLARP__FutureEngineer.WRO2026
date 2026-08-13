@@ -18,7 +18,7 @@ int main() {
 
 	std::cout << "Waiting for LiDAR frames...\n";
 
-	for (int frame = 0; frame < 20; ++frame) {
+	for (int frame = 0; frame < 150; ++frame) {
 		TimedLidarData scan;
 		lidar::LidarProcessor lidar_processor;
 
