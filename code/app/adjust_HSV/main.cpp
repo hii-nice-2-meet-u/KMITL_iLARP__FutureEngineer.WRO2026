@@ -10,7 +10,7 @@ class HSVRangeHighlighter {
 		const std::string &window_name = "HSV Range Highlighter")
 		: window_name_(window_name) {
 		cv::namedWindow(window_name_, cv::WINDOW_NORMAL);
-		cv::resizeWindow(window_name_, 1200, 800);
+		cv::resizeWindow(window_name_, 640, 640);
 
 		createHSVTrackbars();
 	}
@@ -141,9 +141,8 @@ class HSVRangeHighlighter {
 		camera.options->video_width = 640;
 		camera.options->video_height = 640;
 		camera.options->framerate = 100;
-
-		// camera.options->awb_gain_r = 1.0f;
-		// camera.options->awb_gain_b = 1.0f;
+		camera.options->awb_gain_r = 1.4f;
+		camera.options->awb_gain_b = 2.6f;
 
 		std::cout << "Starting LCCV camera...\n";
 
@@ -251,53 +250,9 @@ class HSVRangeHighlighter {
 };
 
 int main() {
-	std::cout << "Choose input mode:\n"
-			  << "1 - Live Raspberry Pi Camera (LCCV)\n"
-			  << "2 - Load image\n"
-			  << "3 - Load video\n"
-			  << "Choice: ";
-
-	int choice = 0;
-	std::cin >> choice;
-
 	HSVRangeHighlighter highlighter;
 
-	switch (choice) {
-	case 1:
-		highlighter.adjustHSVCamera();
-		break;
-
-	case 2: {
-		std::string path;
-
-		std::cout << "Image path: ";
-		std::cin >> path;
-
-		cv::Mat image = cv::imread(path);
-
-		if (image.empty()) {
-			std::cerr << "Failed to load image: " << path << '\n';
-			return 1;
-		}
-
-		highlighter.adjustHSVImage(image);
-		break;
-	}
-
-	case 3: {
-		std::string path;
-
-		std::cout << "Video path: ";
-		std::cin >> path;
-
-		highlighter.adjustHSVVideo(path);
-		break;
-	}
-
-	default:
-		std::cerr << "Invalid choice\n";
-		return 1;
-	}
+	highlighter.adjustHSVCamera();
 
 	return 0;
 }

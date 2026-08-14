@@ -12,6 +12,7 @@ if(LIBCAMERA_FOUND)
 endif()
 
 add_subdirectory(modules/lidar)
+add_subdirectory(modules/camera)
 
 add_subdirectory(app/test_camera)
 add_subdirectory(app/test_lidar)

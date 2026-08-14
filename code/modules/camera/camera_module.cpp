@@ -1,12 +1,11 @@
 #include "camera_module.hpp"
-#include <opencv2/core/mat.hpp>
-#include <thread>
+
 namespace camera {
 
-	CameraModule::~CameraModule(){ stop();}
+CameraModule::~CameraModule() { stop(); }
 
-bool CameraModule::start(unsigned int video_width_ = 640,
-	unsigned int video_height_ = 640, float framerate_ = 90) {
+bool CameraModule::start(
+	unsigned int video_width_, unsigned int video_height_, float framerate_) {
 
 	cam_.options->video_width = video_width_;
 	cam_.options->video_height = video_height_;
@@ -20,10 +19,15 @@ bool CameraModule::start(unsigned int video_width_ = 640,
 		return false;
 	}
 
-	if (!cam.startVideo()) {
+	if (!cam_.startVideo()) {
 		std::cout << "[CameraModule] Failed to start video." << std::endl;
 		return false;
 	}
+
+	libcamera::ControlList &controls = cam_.getControlList();
+
+	controls.set(
+		libcamera::controls::AfMode, libcamera::controls::AfModeContinuous);
 
 	running_ = true;
 	camera_thread_ = std::thread(&CameraModule::capture_loop, this);
@@ -35,7 +39,7 @@ void CameraModule::stop() {
 		std::cout << "[CameraModule] Not running." << std::endl;
 		return;
 	}
-	data_updated_.notify_all();
+	frame_updated_.notify_all();
 	running_ = false;
 	if (camera_thread_.joinable()) {
 		camera_thread_.join();
@@ -46,7 +50,7 @@ void CameraModule::stop() {
 void CameraModule::capture_loop() {
 	while (running_) {
 		cv::Mat frame;
-		if (!cam.getVideoFrame(frame, 1000)) {
+		if (!cam_.getVideoFrame(frame, 1000)) {
 			std::cerr << "[CameraModule] Timeout error" << std::endl;
 			continue;
 		}
@@ -54,13 +58,14 @@ void CameraModule::capture_loop() {
 		cv::flip(frame, frame, -1);
 
 		TimedFrameData timed_frame_data{std::move(frame),
-			std::chrono::duration_cast<std::chrono::microseconds>(
-				std::chrono::steady_clock::now().time_since_epoch())
-				.count()};
+			static_cast<std::uint64_t>(
+				std::chrono::duration_cast<std::chrono::microseconds>(
+					std::chrono::steady_clock::now().time_since_epoch())
+					.count())};
 
 		{
 			std::lock_guard<std::mutex> lock(frame_mutex_);
-			data_buffer_.push(std::move(data));
+			frame_buffer_.push(std::move(timed_frame_data));
 			++frame_sequence_;
 		}
 
@@ -68,7 +73,7 @@ void CameraModule::capture_loop() {
 	}
 }
 
-bool LidarModule::get_latest(TimedFrameData &data) const {
+bool CameraModule::get_latest(TimedFrameData &data) const {
 	std::lock_guard<std::mutex> lock(frame_mutex_);
 	return frame_buffer_.latest(data);
 }

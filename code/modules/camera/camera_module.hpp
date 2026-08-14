@@ -1,14 +1,15 @@
 #include <chrono>
 #include <iomanip>
 #include <iostream>
-#include <opencv2/core/mat.hpp>
+#include <opencv2/opencv.hpp>
 #include <random>
 #include <sstream>
 #include <string>
+#include <thread>
 
+#include "RingBuffer.hpp"
+#include "camera_struct.hpp"
 #include "lccv.hpp"
-#include "libcamera/controls.h"
-#include <opencv2/opencv.hpp>
 
 namespace camera {
 class CameraModule {
@@ -16,9 +17,10 @@ class CameraModule {
 	~CameraModule();
 
 	bool start(unsigned int video_width_ = 640,
-		unsigned int video_height_ = 640, float framerate_{90});
+		unsigned int video_height_ = 640, float framerate_ = 90);
 	void stop();
 
+	bool get_latest(TimedFrameData &data) const;
 	bool wait_for_frame(TimedFrameData &data);
 
   private:
@@ -38,5 +40,5 @@ class CameraModule {
 
 	std::uint64_t frame_sequence_{0};
 	std::uint64_t last_read_sequence_{0};
-}
+};
 } // namespace camera

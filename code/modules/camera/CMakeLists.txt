@@ -1,16 +1,39 @@
-# NOTE: lidar_module
+# NOTE: camera_module camera_processor camera struct
 
-# Building rplidar_sdk
-set(RPLIDAR_SDK_PATH ${CMAKE_SOURCE_DIR}/external/rplidar_sdk/sdk)
-file(GLOB_RECURSE RPLIDAR_SDK_SOURCES ${RPLIDAR_SDK_PATH}/src/*.cpp)
-list(FILTER RPLIDAR_SDK_SOURCES EXCLUDE REGEX ".*macOS.*")
-list(FILTER RPLIDAR_SDK_SOURCES EXCLUDE REGEX ".*win32.*")
-add_library(rplidar_sdk STATIC ${RPLIDAR_SDK_SOURCES})
-target_include_directories(rplidar_sdk PUBLIC ${RPLIDAR_SDK_PATH}/include
-                                              ${RPLIDAR_SDK_PATH}/src)
+# Target: camera_processor
+add_library(camera_processor STATIC
+    camera_processor.cpp
+    camera_processor.hpp
+)
 
-add_library(lidar_module STATIC lidar_module.cpp 	lidar_module.hpp) 
-add_library(lidar_processor STATIC lidar_processor.cpp lidar_processor.hpp)
-target_include_directories(lidar_module PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
-											   ${CMAKE_SOURCE_DIR}/utils)
-target_link_libraries(lidar_module PUBLIC rplidar_sdk )
+target_include_directories(camera_processor
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/utils
+)
+
+
+# Target: camera_module
+
+add_library(camera_module STATIC 
+    camera_module.cpp 
+    camera_module.hpp
+)
+
+target_include_directories(camera_module
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/external/LCCV/include
+        ${OpenCV_INCLUDE_DIRS}
+        ${LIBCAMERA_INCLUDE_DIRS}
+        ${CMAKE_SOURCE_DIR}/utils
+)
+
+
+target_link_libraries(camera_module
+    PRIVATE
+        camera_processor
+        ${OpenCV_LIBS}
+        ${LIBCAMERA_LIBRARIES}
+        liblccv
+)    
