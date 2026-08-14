@@ -57,8 +57,8 @@ int main() {
 
 	// init cam
 	lccv::PiCamera cam;
-	cam.options->video_width = 1920;
-	cam.options->video_height = 1080;
+	cam.options->video_width = 640;
+	cam.options->video_height = 640;
 	cam.options->framerate = 90;
 	cam.options->verbose = true;
 	cam.options->awb_gain_r = 1.4f;
@@ -80,8 +80,7 @@ int main() {
 	int couttttttt = 0;
 	while (true) {
 		if (cam.getVideoFrame(frame, 1000)) {
-			cv::flip(frame, frame, 0);
-			cv::flip(frame, frame, 1);
+			cv::flip(frame, frame, -1);
 			cv::cvtColor(frame, hsvImage, cv::COLOR_BGR2HSV);
 			// cp_frame = frame.clone();
 			// cv::inRange(hsvImage, cv::Scalar(0, 70, 50),

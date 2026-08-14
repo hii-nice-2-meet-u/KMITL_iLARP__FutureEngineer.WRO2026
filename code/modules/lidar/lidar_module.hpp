@@ -25,8 +25,6 @@ class LidarModule {
 
 	~LidarModule();
 
-	LidarModule(const LidarModule &) = delete;
-	LidarModule &operator=(const LidarModule &) = delete;
 
 	bool initialize();
 	void shutdown();
@@ -37,8 +35,6 @@ class LidarModule {
 	bool get_latest(TimedLidarData &data) const;
 	bool wait_for_data(TimedLidarData &data);
 
-	// bool is_initialized() const noexcept;
-	// bool is_running() const noexcept;
   private:
 	void scan_loop();
 
