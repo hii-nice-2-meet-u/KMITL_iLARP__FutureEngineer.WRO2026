@@ -2,17 +2,24 @@
 
 namespace camera {
 
-CameraModule::~CameraModule() { stop(); }
+CameraModule::CameraModule(unsigned int video_width,
+	unsigned int video_height, float framerate, float awb_gain_r,
+	float awb_gain_b) {
 
-bool CameraModule::start(
-	unsigned int video_width_, unsigned int video_height_, float framerate_) {
-
-	cam_.options->video_width = video_width_;
-	cam_.options->video_height = video_height_;
-	cam_.options->framerate = framerate_;
+	cam_.options->video_width = video_width;
+	cam_.options->video_height = video_height;
+	cam_.options->framerate = framerate;
 	cam_.options->verbose = true;
-	cam_.options->awb_gain_r = 1.4f;
-	cam_.options->awb_gain_b = 2.6f;
+	cam_.options->awb_gain_r = awb_gain_r;
+	cam_.options->awb_gain_b = awb_gain_b;
+}
+
+CameraModule::~CameraModule() {
+	stop();
+	cam_.stopVideo();
+}
+
+bool CameraModule::start() {
 
 	if (running_) {
 		std::cout << "[CameraModule] Already started." << std::endl;
@@ -39,13 +46,14 @@ void CameraModule::stop() {
 		std::cout << "[CameraModule] Not running." << std::endl;
 		return;
 	}
-	frame_updated_.notify_all();
 	running_ = false;
+	frame_updated_.notify_all();
 	if (camera_thread_.joinable()) {
 		camera_thread_.join();
 	}
 
 	cam_.stopVideo();
+	std::cout << "[CameraModule] Stopped Succesfully" << std::endl;
 }
 void CameraModule::capture_loop() {
 	while (running_) {

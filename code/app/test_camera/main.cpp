@@ -1,4 +1,8 @@
+#include <cstdlib>
 #include <iostream>
+#include <string>
+#include <vector>
+#include <opencv2/opencv.hpp>
 
 #include "camera_module.hpp"
 #include "camera_processor.hpp"
@@ -63,8 +67,6 @@ int main() {
 	std::vector<cv::Rect> green_rects;
 	std::vector<cv::Rect> all_rects;
 
-	// cv::namedWindow("Frame vs Red Mask", cv::WINDOW_NORMAL);
-
 	int couttttttt = 0;
 
 	while (true) {
@@ -86,7 +88,6 @@ int main() {
 		// cv::flip(frame, frame, -1);
 
 		cv::cvtColor(frame, hsvImage, cv::COLOR_BGR2HSV);
-
 
 		// cv::inRange(
 		//     hsvImage,
@@ -144,9 +145,6 @@ int main() {
 
 		cv::imshow("Frame", frame);
 
-		// cv::imshow("Red Mask", redMask);
-		// cv::imshow("Green Mask", green_mask);
-
 		char key = static_cast<char>(cv::waitKey(1));
 
 		if (key == 's') {
@@ -163,11 +161,10 @@ int main() {
 		}
 
 		if (key == 'q') {
+			camera_module.stop();
 			break;
 		}
 	}
-
-	camera_module.stop();
 
 	cv::destroyAllWindows();
 

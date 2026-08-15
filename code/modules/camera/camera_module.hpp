@@ -14,10 +14,12 @@
 namespace camera {
 class CameraModule {
   public:
+	CameraModule(unsigned int video_width = 640,
+		unsigned int video_height = 640, float framerate = 90,
+		float awb_gain_r = 1.4f, float awb_gain_b = 2.6f);
 	~CameraModule();
 
-	bool start(unsigned int video_width_ = 640,
-		unsigned int video_height_ = 640, float framerate_ = 90);
+	bool start();
 	void stop();
 
 	bool get_latest(TimedFrameData &data) const;
