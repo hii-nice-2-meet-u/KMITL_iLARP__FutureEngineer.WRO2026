@@ -49,7 +49,7 @@ int main() {
 	// init cam
 	camera::CameraModule camera_module;
 
-	if (!camera_module.start(640, 640, 90)) {
+	if (!camera_module.start()) {
 		std::cerr << "Failed to start camera!" << std::endl;
 		return 1;
 	}
@@ -83,9 +83,6 @@ int main() {
 		if (frame.empty()) {
 			continue;
 		}
-
-		// CameraModule already flips the frame in capture_loop()
-		// cv::flip(frame, frame, -1);
 
 		cv::cvtColor(frame, hsvImage, cv::COLOR_BGR2HSV);
 

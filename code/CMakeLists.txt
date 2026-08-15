@@ -14,9 +14,7 @@ endif()
 add_subdirectory(modules/lidar)
 add_subdirectory(modules/camera)
 
-# add_subdirectory(app/test_camera)
+add_subdirectory(app/test_camera)
 add_subdirectory(app/test_lidar)
-add_subdirectory(app/adjust_HSV)
-add_subdirectory(app/adjust_white)
 add_subdirectory(app/camera_tuner)
 
