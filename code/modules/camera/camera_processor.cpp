@@ -1,6 +1,23 @@
 #include "camera_processor.hpp"
 
 namespace camera {
+
+ProcessedCameraData CameraProcessor::process(
+	const TimedFrameData &timed_frame) const {
+	const MaskColor masks = mask_filter(timed_frame);
+
+	std::vector<CameraObject> objects;
+	auto red_objects = extract_objects(masks.red, Color::Red);
+
+	auto green_objects = extract_objects(masks.green, Color::Green);
+
+	objects.insert(objects.end(), red_objects.begin(), red_objects.end());
+
+	objects.insert(objects.end(), green_objects.begin(), green_objects.end());
+
+	return {timed_frame.timestamp_us, std::move(objects)};
+}
+
 MaskColor CameraProcessor::mask_filter(const TimedFrameData &timedFrame) const {
 	const cv::Mat &frame = timedFrame.frame;
 
@@ -17,7 +34,7 @@ MaskColor CameraProcessor::mask_filter(const TimedFrameData &timedFrame) const {
 	cv::Mat greenmask;
 	cv::inRange(hsvImage, LOWER_GREEN, UPPER_GREEN, greenmask);
 
-	cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3));
+	cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(4, 4));
 
 	// morph
 	cv::morphologyEx(redmask, redmask, cv::MORPH_OPEN, kernel);
@@ -85,7 +102,7 @@ bool CameraProcessor::is_valid_contour(
 	const float rect_area = static_cast<float>(b_b.width * b_b.height);
 	const float fill_ratio = static_cast<float>(area) / rect_area;
 
-	if (fill_ratio < min_fill_ratio_) {
+	if (fill_ratio < min_fill_ratio) {
 		return false;
 	}
 
@@ -98,6 +115,7 @@ bool CameraProcessor::is_valid_contour(
 // }
 
 float CameraProcessor::calculate_bearing(float pixel_x) const {
-	return std::atan((pixel_x - cx) / fx);
+	float rad2deg = 180.0f / static_cast<float>(M_PI);
+	return std::atan((pixel_x - cx) / fx) * rad2deg;
 }
 } // namespace camera

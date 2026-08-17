@@ -1,33 +1,24 @@
 #pragma once
 
 #include <opencv2/core/hal/interface.h>
-#include <opencv2/core/types.hpp>
 #include <opencv2/core/mat.hpp>
+#include <opencv2/core/types.hpp>
 #include <opencv2/imgproc.hpp>
 #include <vector>
 
 #include "camera_struct.hpp"
 
 namespace camera {
-	
+
 // Color Ranges (HSV)
-inline const cv::Scalar LOWER_RED_1{0, 110, 170};
+inline const cv::Scalar LOWER_RED_1{0, 70, 50};
+inline const cv::Scalar UPPER_RED_1{10, 255, 255};
 
-inline const cv::Scalar UPPER_RED_1{1, 230, 255};
+inline const cv::Scalar LOWER_RED_2{170, 70, 50};
+inline const cv::Scalar UPPER_RED_2{179, 255, 255};
 
-inline const cv::Scalar LOWER_RED_2{166, 70, 170};
-
-inline const cv::Scalar UPPER_RED_2{179, 230, 255};
-
-inline const cv::Scalar LOWER_GREEN{45, 110, 100};
-
-inline const cv::Scalar UPPER_GREEN{85, 230, 200};
-
-// const cv::Scalar lowerMagenta1Light(165, 244, 200);
-// const cv::Scalar upperMagenta1Light(171, 255, 255);
-
-// const cv::Scalar lowerMagenta2Light(171, 255, 255);
-// const cv::Scalar upperMagenta2Light(171, 255, 255);
+inline const cv::Scalar LOWER_GREEN{20, 180, 66};
+inline const cv::Scalar UPPER_GREEN{85, 255, 190};
 
 enum class Color { Red, Green };
 
@@ -68,9 +59,9 @@ class CameraProcessor {
 		const cv::Mat &mask, Color color) const;
 
 	bool is_valid_contour(const std::vector<cv::Point> &contour,
-		const cv::Rect &bounding_box) const;
+		const cv::Rect &b_b) const;
 
-	cv::Point2f calculate_bottom_center(const cv::Rect &bounding_box) const;
+	cv::Point2f calculate_bottom_center(const cv::Rect &b_b) const;
 
 	float calculate_bearing(float pixel_x) const;
 
