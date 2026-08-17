@@ -80,12 +80,12 @@ class Tunner {
 	unsigned int video_height_{640};
 	float framerate_{90.0f};
 
-	float awb_gain_r_{1.4f};
-	float awb_gain_b_{2.6f};
+	float awb_gain_r_{1.2f};
+	float awb_gain_b_{2.8f};
 
 	// Trackbar values: real AWB gain = slider / 10.0f
-	int awb_gain_r_x10_{14};
-	int awb_gain_b_x10_{26};
+	int awb_gain_r_x10_{12};
+	int awb_gain_b_x10_{28};
 
 	/*
 	 * Default HSV bases.
@@ -95,9 +95,9 @@ class Tunner {
 	 */
 	HSVRange red_hsv_{170, 10, 70, 255, 50, 255};
 
-	HSVRange green_hsv_{35, 85, 60, 255, 40, 255};
+	HSVRange green_hsv_{20, 85, 180, 255, 66, 190};
 
-	HSVRange magenta_hsv_{135, 170, 50, 255, 40, 255};
+	HSVRange magenta_hsv_{160, 170, 165, 255, 95, 160};
 
 	static constexpr const char *TUNE_MASK_WINDOW = "tune_mask";
 };

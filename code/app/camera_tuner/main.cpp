@@ -5,12 +5,12 @@ int main() {
 
 	// tunner.tune_white();
 
-	tunner.tune_red_hsv();
+	// tunner.tune_red_hsv();
 
 	// tunner.tune_green_hsv();
 
-	tunner.tune_magenta_hsv();
-	// tunner.run();
+	// tunner.tune_magenta_hsv();
+	tunner.run();
 
 	return 0;
 }
