@@ -1,160 +1,134 @@
-#include <cstdlib>
 #include <iostream>
 #include <string>
-#include <vector>
+
 #include <opencv2/opencv.hpp>
 
 #include "camera_module.hpp"
 #include "camera_processor.hpp"
 
-bool findFirstRectangle(
-	const cv::Mat &inputImage, std::vector<cv::Rect> &outputRects) {
-	cv::Mat thresh, blurred;
-
-	cv::medianBlur(inputImage, blurred, 5); // Use separate output variable
-	cv::threshold(blurred, thresh, 100, 255, cv::THRESH_BINARY);
-
-	std::vector<std::vector<cv::Point>> contours;
-
-	cv::findContours(
-		thresh, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
-
-	outputRects.clear();
-
-	for (const auto &contour : contours) {
-		std::vector<cv::Point> approx;
-
-		double peri = cv::arcLength(contour, true);
-
-		// Approximate contour with accuracy proportional to perimeter
-		cv::approxPolyDP(contour, approx, 0.02 * peri, true);
-
-		if (approx.size() == 4 && cv::isContourConvex(approx) &&
-			cv::contourArea(approx) > 500) {
-
-			outputRects.push_back(cv::boundingRect(approx));
-		}
-	}
-
-	return !outputRects.empty();
-}
-
 int main() {
-	std::string folder_path = "/home/hii/captured_wro/test_bb/";
+	const std::string folder_path = "/home/hii/captured_wro/test_camera/";
 
-	std::string mkdir_cmd = "mkdir -p " + folder_path;
+	const std::string mkdir_cmd = "mkdir -p " + folder_path;
 
 	system(mkdir_cmd.c_str());
 
-	// init cam
-	camera::CameraModule camera_module;
+	// -------------------------------------------------------------------------
+	// Camera
+	// -------------------------------------------------------------------------
+
+	camera::CameraModule camera_module(640, 640, 90, 1.2, 2.8);
 
 	if (!camera_module.start()) {
-		std::cerr << "Failed to start camera!" << std::endl;
+		std::cerr << "Failed to start camera!\n";
 		return 1;
 	}
 
-	cv::Mat hsvImage;
-	cv::Mat mask1;
-	cv::Mat mask2;
-	cv::Mat redMask;
-	cv::Mat redMaskBGR;
-	cv::Mat combined;
-	cv::Mat green_mask;
-	cv::Mat cp_frame;
+	// -------------------------------------------------------------------------
+	// Camera Processor
+	// -------------------------------------------------------------------------
 
-	std::vector<cv::Rect> red_rects;
-	std::vector<cv::Rect> green_rects;
-	std::vector<cv::Rect> all_rects;
+	camera::CameraProcessor camera_processor;
 
-	int couttttttt = 0;
+	int image_count = 0;
 
 	while (true) {
 
 		TimedFrameData frame_data;
 
 		if (!camera_module.wait_for_frame(frame_data)) {
-			std::cerr << "Failed to get camera frame." << std::endl;
+			std::cerr << "Failed to get camera frame.\n";
 			break;
 		}
 
-		cv::Mat frame = frame_data.frame;
-
-		if (frame.empty()) {
+		if (frame_data.frame.empty()) {
 			continue;
 		}
 
-		cv::cvtColor(frame, hsvImage, cv::COLOR_BGR2HSV);
+		// Process camera frame
+		const camera::ProcessedCameraData processed =
+			camera_processor.process(frame_data);
 
-		// cv::inRange(
-		//     hsvImage,
-		//     cv::Scalar(0, 70, 50),
-		//     cv::Scalar(10, 255, 255),
-		//     mask1);
+		// Clone because this image is only for debug drawing.
+		cv::Mat display_frame = frame_data.frame.clone();
 
-		// cv::inRange(
-		//     hsvImage,
-		//     cv::Scalar(170, 70, 50),
-		//     cv::Scalar(179, 255, 255),
-		//     mask2);
+		// ---------------------------------------------------------------------
+		// Draw detected objects
+		// ---------------------------------------------------------------------
 
-		// redMask = mask1 | mask2;
+		for (const auto &object : processed.objects) {
 
-		cv::inRange(hsvImage, cv::Scalar(11, 79, 37), cv::Scalar(22, 255, 255),
-			redMask);
+			cv::Scalar draw_color;
 
-		// cv::inRange(
-		//     hsvImage,
-		//     cv::Scalar(52, 100, 53),
-		//     cv::Scalar(116, 255, 255),
-		//     green_mask);
+			std::string color_name;
 
-		findFirstRectangle(redMask, red_rects);
+			switch (object.color) {
 
-		// findFirstRectangle(
-		//     green_mask,
-		//     green_rects);
+			case camera::Color::Red:
+				draw_color = cv::Scalar(0, 0, 255);
+				color_name = "RED";
+				break;
 
-		all_rects.clear();
-
-		all_rects.insert(all_rects.end(), red_rects.begin(), red_rects.end());
-
-		// all_rects.insert(
-		//     all_rects.end(),
-		//     green_rects.begin(),
-		//     green_rects.end());
-
-		for (const auto &rect : all_rects) {
-			cv::rectangle(frame, rect, cv::Scalar(0, 255, 0), 3);
-		}
-
-		// cv::rectangle(
-		//     frame,
-		//     red_Rect,
-		//     cv::Scalar(0, 0, 255),
-		//     2);
-
-		// cv::rectangle(
-		//     frame,
-		//     green_Rect,
-		//     cv::Scalar(0, 0, 255),
-		//     2);
-
-		cv::imshow("Frame", frame);
-
-		char key = static_cast<char>(cv::waitKey(1));
-
-		if (key == 's') {
-			std::string file_path =
-				folder_path + "img_" + std::to_string(couttttttt) + ".jpg";
-
-			if (cv::imwrite(file_path, frame)) {
-				std::cout << "Saved: " << file_path << std::endl;
-			} else {
-				std::cerr << "Error saving image to " << file_path << std::endl;
+			case camera::Color::Green:
+				draw_color = cv::Scalar(0, 255, 0);
+				color_name = "GREEN";
+				break;
 			}
 
-			++couttttttt;
+			// Bounding box
+			cv::rectangle(display_frame, object.bounding_box, draw_color, 2);
+
+			// Bottom center
+			cv::circle(display_frame, object.bottom_center, 5, draw_color, -1);
+
+			// Information
+			const std::string text =
+				color_name + " bearing: " + std::to_string(object.bearing_deg);
+
+			cv::putText(display_frame, text,
+				cv::Point(object.bounding_box.x,
+					std::max(20, object.bounding_box.y - 10)),
+				cv::FONT_HERSHEY_SIMPLEX, 0.5, draw_color, 2);
+
+			// Terminal debug
+			std::cout << "Color: " << color_name
+					  << " | x: " << object.bounding_box.x
+					  << " | y: " << object.bounding_box.y
+					  << " | w: " << object.bounding_box.width
+					  << " | h: " << object.bounding_box.height
+					  << " | bearing: " << object.bearing_deg << '\n';
+		}
+
+		// ---------------------------------------------------------------------
+		// Frame information
+		// ---------------------------------------------------------------------
+
+		std::cout << "Timestamp: " << processed.timestamp_us
+				  << " | Objects: " << processed.objects.size() << '\n';
+
+		cv::imshow("Camera Processor Test", display_frame);
+
+		const char key = static_cast<char>(cv::waitKey(1));
+
+		// ---------------------------------------------------------------------
+		// Save image
+		// ---------------------------------------------------------------------
+
+		if (key == 's') {
+
+			const std::string file_path =
+				folder_path + "img_" + std::to_string(image_count) + ".jpg";
+
+			if (cv::imwrite(file_path, display_frame)) {
+
+				std::cout << "Saved: " << file_path << '\n';
+
+			} else {
+
+				std::cerr << "Error saving image to " << file_path << '\n';
+			}
+
+			++image_count;
 		}
 
 		if (key == 'q') {
@@ -162,6 +136,9 @@ int main() {
 			break;
 		}
 	}
+
+	// In case loop exits because wait_for_frame() failed.
+	camera_module.stop();
 
 	cv::destroyAllWindows();
 
