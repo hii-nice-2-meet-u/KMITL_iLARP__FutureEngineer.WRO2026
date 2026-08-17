@@ -1,6 +1,7 @@
 #pragma once
 
 #include <vector>
+#include <opencv2/core.hpp>
 
 struct TimedFrameData {
 	cv::Mat frame;

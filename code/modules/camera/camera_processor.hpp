@@ -1,10 +1,15 @@
 #pragma once
 
+#include <opencv2/core/hal/interface.h>
+#include <opencv2/core/types.hpp>
+#include <opencv2/core/mat.hpp>
+#include <opencv2/imgproc.hpp>
+#include <vector>
+
 #include "camera_struct.hpp"
-#include "opencv2/highgui.hpp"
 
 namespace camera {
-
+	
 // Color Ranges (HSV)
 inline const cv::Scalar LOWER_RED_1{0, 110, 170};
 
@@ -24,10 +29,7 @@ inline const cv::Scalar UPPER_GREEN{85, 230, 200};
 // const cv::Scalar lowerMagenta2Light(171, 255, 255);
 // const cv::Scalar upperMagenta2Light(171, 255, 255);
 
-enum class Color {
-	Red,
-	Green
-}
+enum class Color { Red, Green };
 
 struct CameraTraffic {
 	float angle;
@@ -73,18 +75,18 @@ class CameraProcessor {
 	float calculate_bearing(float pixel_x) const;
 
   private:
-	float fx_{0.0f};
-	float cx_{0.0f};
+	float fx{0.0f};
+	float cx{0.0f};
 
-	double min_contour_area_{500.0}; // NOT TEST YET
+	double min_contour_area{500.0}; // NOT TEST YET
 
-	int min_width_{10}; //NOT TEST YET
-	int min_height_{20};
+	int min_width{10}; // NOT TEST YET
+	int min_height{20};
 
 	float min_aspect_ratio{0.4f};
 	float max_aspect_ratio{2.5f};
 
-	float min_fill_ratio_{0.3f}; //not test yet
+	float min_fill_ratio{0.3f}; // not test yet
 };
 
 } // namespace camera

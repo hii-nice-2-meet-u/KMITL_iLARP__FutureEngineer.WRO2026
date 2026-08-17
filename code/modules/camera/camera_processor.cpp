@@ -1,62 +1,88 @@
 #include "camera_processor.hpp"
-#include <opencv2/core/mat.hpp>
-#include <opencv2/imgproc.hpp>
-#include <vector>
 
 namespace camera {
 MaskColor CameraProcessor::mask_filter(const TimedFrameData &timedFrame) const {
-	const cv::Mat &frame = TimedFrameData.frame;
+	const cv::Mat &frame = timedFrame.frame;
 
-	CV_Assert(!frame.empty());
+	CV_Assert(!frame.empty() && frame.type() == CV_8UC3);
 
 	cv::Mat hsvImage;
 	cv::cvtColor(frame, hsvImage, cv::COLOR_BGR2HSV);
 
-	cv::Mat Redmask1, Redmask2, Redmask;
-	cv::inRange(hsvImage, LOWER_RED_1, UPPER_RED_1, Redmask1);
-	cv::inRange(hsvImage, LOWER_RED_2, UPPER_RED_2, Redmask2);
-	Redmask = Redmask1 | Redmask2;
+	cv::Mat redmask1, redmask2, redmask;
+	cv::inRange(hsvImage, LOWER_RED_1, UPPER_RED_1, redmask1);
+	cv::inRange(hsvImage, LOWER_RED_2, UPPER_RED_2, redmask2);
+	redmask = redmask1 | redmask2;
 
-	cv::Mat Greenmask;
-	cv::inRange(hsvImage, LOWER_GREEN, UPPER_GREEN, Greenmask);
+	cv::Mat greenmask;
+	cv::inRange(hsvImage, LOWER_GREEN, UPPER_GREEN, greenmask);
 
 	cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3));
 
 	// morph
-	cv::morphologyEx(redMask, redMask, cv::MORPH_OPEN, kernel);
-	cv::morphologyEx(redMask, redMask, cv::MORPH_CLOSE, kernel);
+	cv::morphologyEx(redmask, redmask, cv::MORPH_OPEN, kernel);
+	cv::morphologyEx(redmask, redmask, cv::MORPH_CLOSE, kernel);
 
-	cv::morphologyEx(greenMask, greenMask, cv::MORPH_OPEN, kernel);
-	cv::morphologyEx(greenMask, greenMask, cv::MORPH_CLOSE, kernel);
+	cv::morphologyEx(greenmask, greenmask, cv::MORPH_OPEN, kernel);
+	cv::morphologyEx(greenmask, greenmask, cv::MORPH_CLOSE, kernel);
 
-	return {Redmask, Greenmask};
+	return {redmask, greenmask};
 }
 
 std::vector<CameraObject> CameraProcessor::extract_objects(
-	const cv::Mat &mask, Color color) const {}
+	const cv::Mat &mask, Color color) const {
+	std::vector<std::vector<cv::Point>> contours;
 
-// clang-format off
-bool CameraProcessor::is_valid_contour(const std::vector<cv::Point> &contour, const cv::Rect &bounding_box) const {
+	cv::findContours(
+		mask, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
 
-	// clang-format on
+	std::vector<CameraObject> objects;
+
+	for (const auto &contour : contours) {
+
+		const cv::Rect rect = cv::boundingRect(contour);
+
+		if (!is_valid_contour(contour, rect)) {
+			continue;
+		}
+
+		CameraObject object;
+
+		object.color = color;
+		object.bounding_box = rect;
+
+		object.bottom_center =
+			cv::Point2f(rect.x + rect.width * 0.5, rect.y + rect.height);
+
+		object.bearing_deg = calculate_bearing(object.bottom_center.x);
+
+		objects.push_back(object);
+	}
+
+	return objects;
+}
+
+bool CameraProcessor::is_valid_contour(
+	const std::vector<cv::Point> &contour, const cv::Rect &b_b) const {
+
 	const double area = cv::contourArea(contour);
 
-	if (area < min_contour_area_) {
+	if (area < min_contour_area) {
 		return false;
 	}
 
-	if (rect.width < min_width_ || rect.height < min_height_) {
+	if (b_b.width < min_width || b_b.height < min_height) {
 		return false;
 	}
 
 	const float aspect_ratio =
-		static_cast<float>(rect.width) / static_cast<float>(rect.height);
+		static_cast<float>(b_b.width) / static_cast<float>(b_b.height);
 
 	if (aspect_ratio < min_aspect_ratio || aspect_ratio > max_aspect_ratio) {
 		return false;
 	}
 
-	const float rect_area = static_cast<float>(rect.width * rect.height);
+	const float rect_area = static_cast<float>(b_b.width * b_b.height);
 	const float fill_ratio = static_cast<float>(area) / rect_area;
 
 	if (fill_ratio < min_fill_ratio_) {
@@ -65,8 +91,13 @@ bool CameraProcessor::is_valid_contour(const std::vector<cv::Point> &contour, co
 
 	return true;
 }
-cv::Point2f CameraProcessor::calculate_bottom_center(
-	const cv::Rect &bounding_box) const {}
 
-float CameraProcessor::calculate_bearing(float pixel_x) const {}
+// cv::Point2f CameraProcessor::calculate_bottom_center(
+// 	const cv::Rect &b_b) const {
+// 	return cv::Point2f(b_b.x + b_b.width * 0.5f, b_b.y + b_b.height)
+// }
+
+float CameraProcessor::calculate_bearing(float pixel_x) const {
+	return std::atan((pixel_x - cx) / fx);
+}
 } // namespace camera
