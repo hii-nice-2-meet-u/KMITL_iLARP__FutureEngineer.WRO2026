@@ -95,7 +95,7 @@ void Tunner::run() {
 	cv::resizeWindow(white_window, 500, 180);
 	cv::resizeWindow(red_window, 500, 280);
 	cv::resizeWindow(green_window, 500, 280);
-	cv::resizeWindow(magenta_window, 500, 280);
+	// cv::resizeWindow(magenta_window, 500, 280);
 
 	cv::resizeWindow(TUNE_MASK_WINDOW, video_width_, video_height_);
 
@@ -109,7 +109,7 @@ void Tunner::run() {
 
 	create_hsv_trackbars(green_window, green_hsv_);
 
-	create_hsv_trackbars(magenta_window, magenta_hsv_);
+	// create_hsv_trackbars(magenta_window, magenta_hsv_);
 
 	int previous_r = awb_gain_r_x10_;
 	int previous_b = awb_gain_b_x10_;
@@ -193,8 +193,8 @@ void Tunner::run() {
 		// Magenta overlay
 		// ---------------------------------------------------------
 
-		result =
-			apply_hsv_overlay(result, magenta_hsv_, cv::Scalar(255, 0, 255));
+		// result =
+		// 	apply_hsv_overlay(result, magenta_hsv_, cv::Scalar(255, 0, 255));
 
 		draw_awb_values(result);
 

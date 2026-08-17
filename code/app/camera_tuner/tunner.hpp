@@ -87,12 +87,6 @@ class Tunner {
 	int awb_gain_r_x10_{12};
 	int awb_gain_b_x10_{28};
 
-	/*
-	 * Default HSV bases.
-	 *
-	 * Red uses hue wrap-around:
-	 * H = 170 -> 10 means 170..179 OR 0..10.
-	 */
 	HSVRange red_hsv_{170, 10, 70, 255, 50, 255};
 
 	HSVRange green_hsv_{20, 85, 180, 255, 66, 190};

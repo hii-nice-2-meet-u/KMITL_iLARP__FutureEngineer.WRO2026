@@ -17,16 +17,12 @@ int main() {
 	// Camera
 	// -------------------------------------------------------------------------
 
-	camera::CameraModule camera_module(640, 640, 90, 1.2, 2.8);
+	camera::CameraModule camera_module(640, 640, 90, 1.8, 2.8);
 
 	if (!camera_module.start()) {
 		std::cerr << "Failed to start camera!\n";
 		return 1;
 	}
-
-	// -------------------------------------------------------------------------
-	// Camera Processor
-	// -------------------------------------------------------------------------
 
 	camera::CameraProcessor camera_processor;
 
@@ -52,10 +48,6 @@ int main() {
 		// Clone because this image is only for debug drawing.
 		cv::Mat display_frame = frame_data.frame.clone();
 
-		// ---------------------------------------------------------------------
-		// Draw detected objects
-		// ---------------------------------------------------------------------
-
 		for (const auto &object : processed.objects) {
 
 			cv::Scalar draw_color;
@@ -75,22 +67,25 @@ int main() {
 				break;
 			}
 
-			// Bounding box
 			cv::rectangle(display_frame, object.bounding_box, draw_color, 2);
 
-			// Bottom center
 			cv::circle(display_frame, object.bottom_center, 5, draw_color, -1);
 
-			// Information
-			const std::string text =
+			const std::string text1 =
 				color_name + " bearing: " + std::to_string(object.bearing_deg);
+			const std::string text2 = color_name +
+				" width: " + std::to_string(object.bounding_box.width) +
+				", height: " + std::to_string(object.bounding_box.height);
 
-			cv::putText(display_frame, text,
+			cv::putText(display_frame, text1,
 				cv::Point(object.bounding_box.x,
 					std::max(20, object.bounding_box.y - 10)),
 				cv::FONT_HERSHEY_SIMPLEX, 0.5, draw_color, 2);
+			cv::putText(display_frame, text2,
+				cv::Point(object.bounding_box.x - 5,
+					std::max(20, object.bounding_box.y - 30)),
+				cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(153, 153, 0), 2);
 
-			// Terminal debug
 			std::cout << "Color: " << color_name
 					  << " | x: " << object.bounding_box.x
 					  << " | y: " << object.bounding_box.y
@@ -99,10 +94,6 @@ int main() {
 					  << " | bearing: " << object.bearing_deg << '\n';
 		}
 
-		// ---------------------------------------------------------------------
-		// Frame information
-		// ---------------------------------------------------------------------
-
 		std::cout << "Timestamp: " << processed.timestamp_us
 				  << " | Objects: " << processed.objects.size() << '\n';
 
@@ -110,16 +101,12 @@ int main() {
 
 		const char key = static_cast<char>(cv::waitKey(1));
 
-		// ---------------------------------------------------------------------
-		// Save image
-		// ---------------------------------------------------------------------
-
 		if (key == 's') {
 
 			const std::string file_path =
 				folder_path + "img_" + std::to_string(image_count) + ".jpg";
 
-			if (cv::imwrite(file_path, display_frame)) {
+			if (cv::imwrite(file_path, frame_data.frame)) {
 
 				std::cout << "Saved: " << file_path << '\n';
 
@@ -137,7 +124,6 @@ int main() {
 		}
 	}
 
-	// In case loop exits because wait_for_frame() failed.
 	camera_module.stop();
 
 	cv::destroyAllWindows();

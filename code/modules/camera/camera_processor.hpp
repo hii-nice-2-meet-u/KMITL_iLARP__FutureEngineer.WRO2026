@@ -17,8 +17,8 @@ inline const cv::Scalar UPPER_RED_1{10, 255, 255};
 inline const cv::Scalar LOWER_RED_2{170, 70, 50};
 inline const cv::Scalar UPPER_RED_2{179, 255, 255};
 
-inline const cv::Scalar LOWER_GREEN{20, 180, 66};
-inline const cv::Scalar UPPER_GREEN{85, 255, 190};
+inline const cv::Scalar LOWER_GREEN{50, 95, 60};
+inline const cv::Scalar UPPER_GREEN{85, 200, 200};
 
 enum class Color { Red, Green };
 
@@ -58,26 +58,28 @@ class CameraProcessor {
 	std::vector<CameraObject> extract_objects(
 		const cv::Mat &mask, Color color) const;
 
-	bool is_valid_contour(const std::vector<cv::Point> &contour,
-		const cv::Rect &b_b) const;
+	bool is_valid_contour(
+		const std::vector<cv::Point> &contour, const cv::Rect &b_b) const;
 
 	cv::Point2f calculate_bottom_center(const cv::Rect &b_b) const;
 
 	float calculate_bearing(float pixel_x) const;
 
   private:
-	float fx{0.0f};
-	float cx{0.0f};
+	float fx = 1268.97425f;
+	float cx = 317.980325f;
 
-	double min_contour_area{500.0}; // NOT TEST YET
+	double min_contour_area{650.0}; 
 
-	int min_width{10}; // NOT TEST YET
-	int min_height{20};
+	int min_width{15}; 
+	int max_width{15}; 
+	int min_height{25};
+	int max_height{25};
+	
+	float min_aspect_ratio{0.5f};
+	float max_aspect_ratio{1.5f};
 
-	float min_aspect_ratio{0.4f};
-	float max_aspect_ratio{2.5f};
-
-	float min_fill_ratio{0.3f}; // not test yet
+	float min_fill_ratio{0.7f}; 
 };
 
 } // namespace camera
