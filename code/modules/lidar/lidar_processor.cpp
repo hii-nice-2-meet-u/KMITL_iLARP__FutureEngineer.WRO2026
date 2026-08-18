@@ -51,7 +51,6 @@ bool LidarProcessor::is_valid_point(const LidarPoint &point) const {
 
 CartesianPoint LidarProcessor::polar2cartesian(const LidarPoint &point) const {
 	CartesianPoint result;
-	result.angle_deg = point.angle_deg;
 	result.distance_m = point.distance_m;
 	const float rad = point.angle_deg * static_cast<float>(M_PI) / 180.f;
 	result.x_m = point.distance_m * std::cos(rad);
@@ -77,7 +76,8 @@ std::vector<CartesianPoint> LidarProcessor::get_sector(
 		if (start_angle <= end_angle) {
 			inside_sector =
 				point.angle_deg >= start_angle && point.angle_deg <= end_angle;
-		} else { // Wrap-around sector
+		} else {
+			// Wrap-around sector
 			inside_sector =
 				point.angle_deg >= start_angle || point.angle_deg <= end_angle;
 		}
@@ -171,7 +171,7 @@ WallEstimate LidarProcessor::fit_wall(
 
 	result.distance_m = std::abs(intercept) / std::sqrt(slope * slope + 1.0f);
 
-	result.angle_deg = std::atan(slope) * 180.0f / static_cast<float>(M_PI);
+	result.angle_rad = std::atan(slope);
 
 	result.valid = true;
 	return result;

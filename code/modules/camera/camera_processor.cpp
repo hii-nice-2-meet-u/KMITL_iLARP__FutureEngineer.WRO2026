@@ -71,7 +71,7 @@ std::vector<CameraObject> CameraProcessor::extract_objects(
 		object.bottom_center =
 			cv::Point2f(rect.x + rect.width * 0.5, rect.y + rect.height);
 
-		object.bearing_deg = calculate_bearing(object.bottom_center.x);
+		object.bearing_rad = calculate_bearing(object.bottom_center.x);
 
 		objects.push_back(object);
 	}
@@ -115,7 +115,6 @@ bool CameraProcessor::is_valid_contour(
 // }
 
 float CameraProcessor::calculate_bearing(float pixel_x) const {
-	float rad2deg = 180.0f / static_cast<float>(M_PI);
-	return std::atan((pixel_x - cx) / fx) * rad2deg;
+	return std::atan((pixel_x - cx) / fx);
 }
 } // namespace camera

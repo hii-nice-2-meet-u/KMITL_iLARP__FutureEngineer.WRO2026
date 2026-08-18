@@ -22,11 +22,6 @@ inline const cv::Scalar UPPER_GREEN{85, 200, 200};
 
 enum class Color { Red, Green };
 
-struct CameraTraffic {
-	float angle;
-	Color color;
-};
-
 struct MaskColor {
 	cv::Mat red;
 	cv::Mat green;
@@ -38,7 +33,7 @@ struct CameraObject {
 	cv::Rect bounding_box;
 	cv::Point2f bottom_center;
 
-	float bearing_deg{0.0f};
+	float bearing_rad{0.0f};
 };
 
 struct ProcessedCameraData {
@@ -46,6 +41,7 @@ struct ProcessedCameraData {
 
 	std::vector<CameraObject> objects;
 };
+
 class CameraProcessor {
   public:
 	CameraProcessor() = default;
@@ -69,17 +65,15 @@ class CameraProcessor {
 	float fx = 1268.97425f;
 	float cx = 317.980325f;
 
-	double min_contour_area{650.0}; 
+	double min_contour_area{650.0};
 
-	int min_width{15}; 
-	int max_width{15}; 
+	int min_width{15};
 	int min_height{25};
-	int max_height{25};
-	
+
 	float min_aspect_ratio{0.5f};
 	float max_aspect_ratio{1.5f};
 
-	float min_fill_ratio{0.7f}; 
+	float min_fill_ratio{0.7f};
 };
 
 } // namespace camera

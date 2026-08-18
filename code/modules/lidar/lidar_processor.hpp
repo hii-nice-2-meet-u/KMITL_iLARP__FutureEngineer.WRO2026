@@ -12,14 +12,13 @@ namespace lidar {
 struct CartesianPoint {
 	float x_m;
 	float y_m;
-	float angle_deg;
 	float distance_m; // in meter
 };
 
 struct WallEstimate {
 	bool valid{false};
 	float distance_m{0.0f};
-	float angle_deg{0.0f};
+	float angle_rad{0.0f};
 };
 
 struct ObstacleObject {
