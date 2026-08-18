@@ -1,5 +1,3 @@
-# NOTE: lidar_module
-
 # Building rplidar_sdk
 set(RPLIDAR_SDK_PATH ${CMAKE_SOURCE_DIR}/external/rplidar_sdk/sdk)
 
@@ -28,6 +26,7 @@ add_library(lidar_processor STATIC
 target_include_directories(lidar_processor
     PUBLIC 
         ${CMAKE_CURRENT_SOURCE_DIR}
+		${OpenCV_INCLUDE_DIRS}
         ${CMAKE_SOURCE_DIR}/utils
 )
 
@@ -40,6 +39,7 @@ add_library(lidar_module STATIC
 target_include_directories(lidar_module 
     PUBLIC 
         ${CMAKE_CURRENT_SOURCE_DIR}
+		${OpenCV_INCLUDE_DIRS}
         ${CMAKE_SOURCE_DIR}/utils
 )
 

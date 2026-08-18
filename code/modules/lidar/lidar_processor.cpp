@@ -1,5 +1,4 @@
 #include "lidar_processor.hpp"
-#include <iostream>
 
 namespace lidar {
 ProcessedLidarData LidarProcessor::process(const TimedLidarData &data) const {
@@ -37,6 +36,7 @@ ProcessedLidarData LidarProcessor::process(const TimedLidarData &data) const {
 
 	return result;
 }
+
 bool LidarProcessor::is_valid_point(const LidarPoint &point) const {
 	if (point.quality < 50)
 		return false;
@@ -59,6 +59,7 @@ CartesianPoint LidarProcessor::polar2cartesian(const LidarPoint &point) const {
 
 	return result;
 }
+
 std::vector<CartesianPoint> LidarProcessor::get_sector(
 	const TimedLidarData &data, float start_angle, float end_angle) const {
 	std::vector<CartesianPoint> result;
@@ -114,6 +115,7 @@ float LidarProcessor::median_distance(
 
 	return distances[middle];
 }
+
 std::vector<CartesianPoint> LidarProcessor::extract_wall_candidates(
 	const std::vector<CartesianPoint> &points) const {
 	std::vector<CartesianPoint> candidates;
@@ -121,17 +123,6 @@ std::vector<CartesianPoint> LidarProcessor::extract_wall_candidates(
 	if (points.empty()) {
 		return candidates;
 	}
-
-	/*
-	 * First implementation:
-	 *
-	 *
-	 *  after test will add:
-	 * - distance gating
-	 * - neighbor continuity
-	 * - cluster rejection
-	 * - outlier rejection
-	 */
 
 	candidates.reserve(points.size());
 
@@ -185,4 +176,7 @@ WallEstimate LidarProcessor::fit_wall(
 	result.valid = true;
 	return result;
 }
+
+// std::vector<ObstacleObject> LidarProcessor::detect_obstacles(
+// 	const TimedLidarData &data) const {}
 } // namespace lidar

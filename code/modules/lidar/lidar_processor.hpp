@@ -1,9 +1,12 @@
 #pragma once
 
-#include "lidar_struct.hpp"
 #include <algorithm>
 #include <cmath>
+#include <iostream>
+#include <opencv2/core/types.hpp>
 #include <vector>
+
+#include "lidar_struct.hpp"
 
 namespace lidar {
 struct CartesianPoint {
@@ -15,9 +18,18 @@ struct CartesianPoint {
 
 struct WallEstimate {
 	bool valid{false};
-
 	float distance_m{0.0f};
 	float angle_deg{0.0f};
+};
+
+struct ObstacleObject {
+	float angle_deg{0.0f};
+	float distance_m{0.0f};
+
+	float x_m{0.0f};
+	float y_m{0.0f};
+
+	float width_m{0.0f};
 };
 
 struct ProcessedLidarData {
@@ -30,10 +42,12 @@ struct ProcessedLidarData {
 	float front_distance_m{0.0f};
 	float left_distance_m{0.0f};
 	float right_distance_m{0.0f};
+
+	std::vector<ObstacleObject> obstacles;
 };
 class LidarProcessor {
   public:
-	ProcessedLidarData process(const TimedLidarData &point) const;
+	ProcessedLidarData process(const TimedLidarData &data) const;
 
   private:
 	bool is_valid_point(const LidarPoint &point) const;
@@ -49,6 +63,11 @@ class LidarProcessor {
 		const std::vector<CartesianPoint> &points) const;
 
 	WallEstimate fit_wall(const std::vector<CartesianPoint> &points) const;
+
+	// std::vector<ObstacleObject> detect_obstacles(
+	// 	const TimedLidarData &data) const;
+
+	// float calculate_bearing(float x_m, float y_m) const;
 };
 
 } // namespace lidar

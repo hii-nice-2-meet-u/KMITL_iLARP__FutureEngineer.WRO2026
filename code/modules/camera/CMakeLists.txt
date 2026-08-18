@@ -1,5 +1,3 @@
-# NOTE: camera_module camera_processor camera struct
-
 # Target: camera_processor
 add_library(camera_processor STATIC
     camera_processor.cpp
@@ -19,7 +17,6 @@ target_link_libraries(camera_processor
 )
 
 # Target: camera_module
-
 add_library(camera_module STATIC 
     camera_module.cpp 
     camera_module.hpp
