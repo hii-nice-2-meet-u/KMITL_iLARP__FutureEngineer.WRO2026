@@ -16,10 +16,23 @@ struct CartesianPoint {
 };
 
 struct WallEstimate {
-	bool valid{false};
-	float distance_m{0.0f};
-	float angle_rad{0.0f};
+	bool valid = false;
+
+	float angle_rad = 0.0f;
+
+	float normal_x = 0.0f;
+	float normal_y = 0.0f;
+
+	float line_c = 0.0f;
+
+	float rms_error_m = 0.0f;
 };
+
+// struct WallEstimate {
+// 	bool valid{false};
+// 	float distance_m{0.0f};
+// 	float angle_rad{0.0f};
+// };
 
 struct ObstacleObject {
 	float angle_deg{0.0f};

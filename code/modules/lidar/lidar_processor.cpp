@@ -141,41 +141,106 @@ WallEstimate LidarProcessor::fit_wall(
 		return result;
 	}
 
-	// y = mx + b
+	float mean_x = 0.0f;
+	float mean_y = 0.0f;
 
-	float sum_x = 0.0f;
-	float sum_y = 0.0f;
-	float sum_xx = 0.0f;
-	float sum_xy = 0.0f;
-
-	for (const auto &point : points) {
-		sum_x += point.x_m;
-		sum_y += point.y_m;
-		sum_xx += point.x_m * point.x_m;
-		sum_xy += point.x_m * point.y_m;
+	for (const auto &p : points) {
+		mean_x += p.x_m;
+		mean_y += p.y_m;
 	}
 
 	const float n = static_cast<float>(points.size());
 
-	const float denominator = n * sum_xx - sum_x * sum_x;
+	mean_x /= n;
+	mean_y /= n;
 
-	if (std::abs(denominator) < 1e-6f) {
-		return result;
+	float sxx = 0.0f;
+	float syy = 0.0f;
+	float sxy = 0.0f;
+
+	for (const auto &p : points) {
+		const float dx = p.x_m - mean_x;
+		const float dy = p.y_m - mean_y;
+
+		sxx += dx * dx;
+		syy += dy * dy;
+		sxy += dx * dy;
 	}
 
-	const float slope = (n * sum_xy - sum_x * sum_y) / denominator;
+	const float theta = 0.5f * std::atan2(2.0f * sxy, sxx - syy);
 
-	const float intercept = (sum_y - slope * sum_x) / n;
+	const float dir_x = std::cos(theta);
+	const float dir_y = std::sin(theta);
 
-	//   mx - y + b = 0
+	const float normal_x = -dir_y;
+	const float normal_y = dir_x;
 
-	result.distance_m = std::abs(intercept) / std::sqrt(slope * slope + 1.0f);
+	const float c = -(normal_x * mean_x + normal_y * mean_y);
 
-	result.angle_rad = std::atan(slope);
+	float error_sum = 0.0f;
+
+	for (const auto &p : points) {
+		const float distance = normal_x * p.x_m + normal_y * p.y_m + c;
+
+		error_sum += distance * distance;
+	}
 
 	result.valid = true;
+	result.angle_rad = theta;
+
+	result.normal_x = normal_x;
+	result.normal_y = normal_y;
+
+	result.line_c = c;
+
+	result.rms_error_m = std::sqrt(error_sum / n);
+
 	return result;
 }
+
+// WallEstimate LidarProcessor::fit_wall(
+// 	const std::vector<CartesianPoint> &points) const {
+// 	WallEstimate result;
+
+// 	if (points.size() < 2) {
+// 		return result;
+// 	}
+
+// 	// y = mx + b
+
+// 	float sum_x = 0.0f;
+// 	float sum_y = 0.0f;
+// 	float sum_xx = 0.0f;
+// 	float sum_xy = 0.0f;
+
+// 	for (const auto &point : points) {
+// 		sum_x += point.x_m;
+// 		sum_y += point.y_m;
+// 		sum_xx += point.x_m * point.x_m;
+// 		sum_xy += point.x_m * point.y_m;
+// 	}
+
+// 	const float n = static_cast<float>(points.size());
+
+// 	const float denominator = n * sum_xx - sum_x * sum_x;
+
+// 	if (std::abs(denominator) < 1e-6f) {
+// 		return result;
+// 	}
+
+// 	const float slope = (n * sum_xy - sum_x * sum_y) / denominator;
+
+// 	const float intercept = (sum_y - slope * sum_x) / n;
+
+// 	//   mx - y + b = 0
+
+// 	result.distance_m = std::abs(intercept) / std::sqrt(slope * slope + 1.0f);
+
+// 	result.angle_rad = std::atan(slope);
+
+// 	result.valid = true;
+// 	return result;
+// }
 
 // std::vector<ObstacleObject> LidarProcessor::detect_obstacles(
 // 	const TimedLidarData &data) const {}
