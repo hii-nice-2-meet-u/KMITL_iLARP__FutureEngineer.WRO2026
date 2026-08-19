@@ -41,11 +41,7 @@ struct ObstacleObject {
 
 struct ProcessedLidarData {
 	std::uint64_t timestamp_us{0};
-
-	float front_distance_m{0.0f};
-	float left_distance_m{0.0f};
-	float right_distance_m{0.0f};
-
+	std::vector<WallEstimate> merged_walls;
 	std::vector<ObstacleObject> obstacles;
 };
 class LidarProcessor {
@@ -72,13 +68,17 @@ class LidarProcessor {
 		std::size_t min_points,
 		std::vector<std::vector<CartesianPoint>> &segments) const;
 
-	// clang-format on
+	
 	std::optional<WallEstimate> fit_wall(
 		const std::vector<CartesianPoint> &points) const;
 
-	void merge_aligned_wall(std::vector<WallEstimate> &walls,
-		float max_angle_diff_rad, float max_collinear_error_m,
+	void merge_aligned_wall(
+		std::vector<WallEstimate> &walls,
+		float max_angle_diff_rad, 
+		float max_collinear_error_m,
 		float max_gap_m) const;
+	// clang-format on
+
 	// std::vector<ObstacleObject> detect_obstacles(
 	// 	const TimedLidarData &data) const;
 

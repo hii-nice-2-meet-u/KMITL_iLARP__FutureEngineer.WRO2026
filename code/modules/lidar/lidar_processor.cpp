@@ -6,35 +6,21 @@ namespace lidar {
 ProcessedLidarData LidarProcessor::process(const TimedLidarData &data) const {
 	ProcessedLidarData result;
 	result.timestamp_us = data.timestamp_us;
+	std::vector<CartesianPoint> points;
 
-	// const auto front_points = get_sector(data, 340.0f, 20.0f);
-	// const auto right_points = get_sector(data, 70.0f, 110.0f);
-	// const auto left_points = get_sector(data, 250.0f, 290.0f);
+	for (const auto &point : data.points) {
+		if (!is_valid_point(point)) continue;
 
-	// DEBUG: Check right-sector Polar -> Cartesian conversion
-	// std::cout << "\n--- RIGHT CARTESIAN ---\n";
+		points.push_back(polar2cartesian(point));
+		if (points.empty()) return result;
+		
+		constexpr float MAX_LINE_ERROR_M = 0.02f;
+		constexpr float MAX_POINT_GAP_M = 0.08f;
+		constexpr std::size_t MIN_WALL_POINTS = 8;
 
-	// for (std::size_t i = 0; i < right_points.size() ; ++i) {
-
-	// 	const auto &p = right_points[i];
-
-	// 	std::cout << "angle=" << p.angle_deg << " dist=" << p.distance_m
-	// 			  << " x=" << p.x_m << " y=" << p.y_m << '\n';
-	// }
-
-	// result.front_distance_m = median_distance(front_points);
-	// result.left_distance_m = median_distance(left_points);
-	// result.right_distance_m = median_distance(right_points);
-
-	// const auto left_candidates = extract_wall_candidates(left_points);
-
-	// const auto right_candidates = extract_wall_candidates(right_points);
-
-	// const auto front_candidates = extract_wall_candidates(front_points);
-
-	// result.left_wall = fit_wall(left_candidates);
-	// result.right_wall = fit_wall(right_candidates);
-	// result.front_wall = fit_wall(front_candidates);
+		const auto segments = split_wall_points(
+			points, MAX_LINE_ERROR_M, MAX_POINT_GAP_M, MIN_WALL_POINTS);
+	}
 
 	return result;
 }
@@ -261,9 +247,10 @@ void LidarProcessor::merge_aligned_wall(std::vector<WallEstimate> &walls,
 
 			a.start = new_start;
 			a.end = new_end;
+			removed[j] = true;
 		}
 	}
-	
+
 	std::vector<WallEstimate> merged;
 	merged.reserve(walls.size());
 
