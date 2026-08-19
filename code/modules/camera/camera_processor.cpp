@@ -84,13 +84,9 @@ bool CameraProcessor::is_valid_contour(
 
 	const double area = cv::contourArea(contour);
 
-	if (area < min_contour_area) {
-		return false;
-	}
+	if (area < min_contour_area) return false;
 
-	if (b_b.width < min_width || b_b.height < min_height) {
-		return false;
-	}
+	if (b_b.width < min_width || b_b.height < min_height) return false;
 
 	const float aspect_ratio =
 		static_cast<float>(b_b.width) / static_cast<float>(b_b.height);
@@ -102,9 +98,7 @@ bool CameraProcessor::is_valid_contour(
 	const float rect_area = static_cast<float>(b_b.width * b_b.height);
 	const float fill_ratio = static_cast<float>(area) / rect_area;
 
-	if (fill_ratio < min_fill_ratio) {
-		return false;
-	}
+	if (fill_ratio < min_fill_ratio) return false;
 
 	return true;
 }
