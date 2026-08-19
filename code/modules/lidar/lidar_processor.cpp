@@ -13,13 +13,43 @@ ProcessedLidarData LidarProcessor::process(const TimedLidarData &data) const {
 
 		points.push_back(polar2cartesian(point));
 		if (points.empty()) return result;
-		
+
 		constexpr float MAX_LINE_ERROR_M = 0.02f;
 		constexpr float MAX_POINT_GAP_M = 0.08f;
 		constexpr std::size_t MIN_WALL_POINTS = 8;
 
 		const auto segments = split_wall_points(
 			points, MAX_LINE_ERROR_M, MAX_POINT_GAP_M, MIN_WALL_POINTS);
+
+		std::vector<WallEstimate> walls;
+		walls.reserve(segments.size());
+
+		for (const auto &segment : segments) {
+
+			const auto wall = fit_wall(segment);
+
+			if (!wall.has_value()) {
+				continue;
+			}
+
+			// Reject bad line fitting
+			if (wall->rms_error_m > MAX_LINE_ERROR_M) {
+				continue;
+			}
+
+			walls.push_back(*wall);
+		}
+
+		constexpr float MAX_ANGLE_DIFF_RAD =
+			5.0f * static_cast<float>(M_PI) / 180.0f;
+
+		constexpr float MAX_COLLINEAR_ERROR_M = 0.03f;
+		constexpr float MAX_WALL_GAP_M = 0.10f;
+
+		merge_aligned_wall(
+			walls, MAX_ANGLE_DIFF_RAD, MAX_COLLINEAR_ERROR_M, MAX_WALL_GAP_M);
+
+		result.merged_walls = std::move(walls);
 	}
 
 	return result;
