@@ -5,9 +5,9 @@ ProcessedLidarData LidarProcessor::process(const TimedLidarData &data) const {
 	ProcessedLidarData result;
 	result.timestamp_us = data.timestamp_us;
 
-	const auto front_points = get_sector(data, 340.0f, 20.0f);
-	const auto right_points = get_sector(data, 70.0f, 110.0f);
-	const auto left_points = get_sector(data, 250.0f, 290.0f);
+	// const auto front_points = get_sector(data, 340.0f, 20.0f);
+	// const auto right_points = get_sector(data, 70.0f, 110.0f);
+	// const auto left_points = get_sector(data, 250.0f, 290.0f);
 
 	// DEBUG: Check right-sector Polar -> Cartesian conversion
 	// std::cout << "\n--- RIGHT CARTESIAN ---\n";
@@ -20,19 +20,19 @@ ProcessedLidarData LidarProcessor::process(const TimedLidarData &data) const {
 	// 			  << " x=" << p.x_m << " y=" << p.y_m << '\n';
 	// }
 
-	result.front_distance_m = median_distance(front_points);
-	result.left_distance_m = median_distance(left_points);
-	result.right_distance_m = median_distance(right_points);
+	// result.front_distance_m = median_distance(front_points);
+	// result.left_distance_m = median_distance(left_points);
+	// result.right_distance_m = median_distance(right_points);
 
-	const auto left_candidates = extract_wall_candidates(left_points);
+	// const auto left_candidates = extract_wall_candidates(left_points);
 
-	const auto right_candidates = extract_wall_candidates(right_points);
+	// const auto right_candidates = extract_wall_candidates(right_points);
 
-	const auto front_candidates = extract_wall_candidates(front_points);
+	// const auto front_candidates = extract_wall_candidates(front_points);
 
-	result.left_wall = fit_wall(left_candidates);
-	result.right_wall = fit_wall(right_candidates);
-	result.front_wall = fit_wall(front_candidates);
+	// result.left_wall = fit_wall(left_candidates);
+	// result.right_wall = fit_wall(right_candidates);
+	// result.front_wall = fit_wall(front_candidates);
 
 	return result;
 }
@@ -58,6 +58,120 @@ CartesianPoint LidarProcessor::polar2cartesian(const LidarPoint &point) const {
 
 	return result;
 }
+
+// clang-format off
+std::vector<std::vector<CartesianPoint>> LidarProcessor::split_wall_points(
+	const std::vector<CartesianPoint> &points,
+	float max_line_error_m,
+	float max_point_gap_m,
+	std::size_t min_points) const {
+
+	std::vector<std::vector<CartesianPoint>> segments;
+
+	if (points.size() < min_points) {
+		return segments;
+	}
+
+	split_wall_points_recursive(points, 0, points.size() - 1, max_line_error_m,
+		max_point_gap_m, min_points, segments);
+
+	return segments;
+}
+
+void LidarProcessor::split_wall_points_recursive(
+	const std::vector<CartesianPoint> &points,
+	std::size_t start,
+	std::size_t end,
+	float max_line_error_m,
+	float max_point_gap_m,
+	std::size_t min_points,
+	std::vector<std::vector<CartesianPoint>> &segments) const {
+
+	if (end <= start) {
+		return;
+	}
+
+	const std::size_t count = end - start + 1;
+
+	if (count < min_points) {
+		return;
+	}
+
+	const auto &first = points[start];
+	const auto &last = points[end];
+
+	const float dx = last.x_m - first.x_m;
+	const float dy = last.y_m - first.y_m;
+
+	const float line_length = std::hypot(dx, dy);
+
+	if (line_length < 1e-6f) {
+		return;
+	}
+
+	// Check Gap between 2 Points
+	for (std::size_t i = start; i < end; ++i) {
+
+		const float gap = std::hypot(points[i + 1].x_m - points[i].x_m, points[i + 1].y_m - points[i].y_m);
+
+		if (gap > max_point_gap_m) {
+
+			split_wall_points_recursive(points, start, i, max_line_error_m,
+				max_point_gap_m, min_points, segments);
+
+			split_wall_points_recursive(points, i + 1, end, max_line_error_m,
+				max_point_gap_m, min_points, segments);
+
+			return;
+		}
+	}
+
+	// find Point that far from line(start to end)
+	float max_error = 0.0f;
+	std::size_t split_index = start;
+
+	for (std::size_t i = start + 1; i < end; ++i) {
+
+		const float px = points[i].x_m;
+		const float py = points[i].y_m;
+
+		const float numerator = std::abs(
+
+			//Ax+ By +C / hypot(dy, dx)
+			dy * px - dx * py + last.x_m * first.y_m - last.y_m * first.x_m);
+
+		const float distance = numerator / line_length;
+
+		if (distance > max_error) {
+			max_error = distance;
+			split_index = i;
+		}
+	}
+
+	
+	if (max_error > max_line_error_m && split_index > start && split_index < end) {
+
+		split_wall_points_recursive(points, start, split_index,
+			max_line_error_m, max_point_gap_m, min_points, segments);
+
+		split_wall_points_recursive(points, split_index, end, max_line_error_m,
+			max_point_gap_m, min_points, segments);
+
+		return;
+	}
+
+	
+	std::vector<CartesianPoint> segment;
+
+	segment.reserve(count);
+
+	for (std::size_t i = start; i <= end; ++i) {
+		segment.push_back(points[i]);
+	}
+
+	segments.push_back(std::move(segment));
+}
+// clang-format on
 
 WallEstimate LidarProcessor::fit_wall(
 	const std::vector<CartesianPoint> &points) const {

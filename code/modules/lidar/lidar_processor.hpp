@@ -8,6 +8,7 @@
 #include "lidar_struct.hpp"
 
 namespace lidar {
+	
 struct CartesianPoint {
 	float x_m;
 	float y_m;
@@ -27,7 +28,6 @@ struct WallEstimate {
 	float rms_error_m = 0.0f;
 };
 
-
 struct ObstacleObject {
 	float angle_deg{0.0f};
 	float distance_m{0.0f};
@@ -41,9 +41,9 @@ struct ObstacleObject {
 struct ProcessedLidarData {
 	std::uint64_t timestamp_us{0};
 
-	WallEstimate left_wall;
-	WallEstimate right_wall;
-	WallEstimate front_wall;
+	// WallEstimate left_wall;
+	// WallEstimate right_wall;
+	// WallEstimate front_wall;
 
 	float front_distance_m{0.0f};
 	float left_distance_m{0.0f};
@@ -60,6 +60,22 @@ class LidarProcessor {
 
 	CartesianPoint polar2cartesian(const LidarPoint &lidar_point) const;
 
+	// clang-format off
+	std::vector<std::vector<CartesianPoint>> split_wall_points(
+		const std::vector<CartesianPoint> &points,
+		float max_line_error_m,
+		float max_point_gap_m,
+		std::size_t min_points) const;
+
+	void split_wall_points_recursive(
+		const std::vector<CartesianPoint> &points,
+		std::size_t start, std::size_t end,
+		float max_line_error_m,
+		float max_point_gap_m,
+		std::size_t min_points,
+		std::vector<std::vector<CartesianPoint>> &segments) const;
+
+	// clang-format on
 	WallEstimate fit_wall(const std::vector<CartesianPoint> &points) const;
 
 	// std::vector<ObstacleObject> detect_obstacles(
