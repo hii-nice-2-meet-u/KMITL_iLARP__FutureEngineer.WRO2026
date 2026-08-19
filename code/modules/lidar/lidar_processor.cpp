@@ -1,4 +1,6 @@
 #include "lidar_processor.hpp"
+#include <cmath>
+#include <cstddef>
 
 namespace lidar {
 ProcessedLidarData LidarProcessor::process(const TimedLidarData &data) const {
@@ -38,10 +40,8 @@ ProcessedLidarData LidarProcessor::process(const TimedLidarData &data) const {
 }
 
 bool LidarProcessor::is_valid_point(const LidarPoint &point) const {
-	if (point.quality < 50)
-		return false;
-	if (point.distance_m < 0.01f)
-		return false;
+	if (point.quality < 50) return false;
+	if (point.distance_m < 0.01f) return false;
 	// if (point.distance_m <= 0.0f)
 	// 	return false;
 
@@ -72,8 +72,13 @@ std::vector<std::vector<CartesianPoint>> LidarProcessor::split_wall_points(
 		return segments;
 	}
 
-	split_wall_points_recursive(points, 0, points.size() - 1, max_line_error_m,
-		max_point_gap_m, min_points, segments);
+	split_wall_points_recursive(
+		points, 
+		0, 
+		points.size() - 1, 
+		max_line_error_m,
+		max_point_gap_m, min_points, 
+		segments);
 
 	return segments;
 }
@@ -171,14 +176,111 @@ void LidarProcessor::split_wall_points_recursive(
 
 	segments.push_back(std::move(segment));
 }
-// clang-format on
 
-WallEstimate LidarProcessor::fit_wall(
+// clang-format on
+void LidarProcessor::merge_aligned_wall(std::vector<WallEstimate> &walls,
+	float max_angle_diff_rad, float max_collinear_error_m,
+	float max_gap_m) const {
+
+	if (walls.size() < 2) {
+		return;
+	}
+
+	std::vector<bool> removed(walls.size(), false);
+
+	for (std::size_t i = 0; i < walls.size(); ++i) {
+		if (removed[i]) {
+			continue;
+		}
+		for (std::size_t j = i + 1; i < walls.size(); ++j) {
+			if (removed[j]) {
+				continue;
+			}
+
+			auto &a = walls[i];
+			const auto &b = walls[j];
+
+			// angle check
+			float angle_diff = std::abs(b.angle_rad - a.angle_rad);
+			angle_diff = std::fmod(angle_diff, static_cast<float>(M_PI));
+
+			if (angle_diff > static_cast<float>(M_PI) * 0.5f) {
+				angle_diff = static_cast<float>(M_PI) - angle_diff;
+			}
+
+			if (angle_diff > max_angle_diff_rad) {
+				continue;
+			}
+			// Collinear check
+			const cv::Point2f b_center = (b.start + b.end) * 0.5f;
+
+			const float line_error = std::abs(
+				a.normal_x * b_center.x + a.normal_y * b_center.y + a.line_c);
+
+			if (line_error > max_collinear_error_m) {
+				continue;
+			}
+
+			// gap check
+			const float gap = std::min(
+				{cv::norm(a.start - b.start), cv::norm(a.start - b.end),
+					cv::norm(a.end - b.start), cv::norm(a.end - b.end)});
+			if (gap > max_gap_m) {
+				continue;
+			}
+
+			// merge
+			std::vector<cv::Point2f> endpoints = {
+				a.start, a.end, b.start, b.end};
+
+			const cv::Point2f dir(std::cos(a.angle_rad), std::sin(a.angle_rad));
+
+			auto projection = [&](const cv::Point2f &p) {
+				return p.x * dir.x + p.y * dir.y;
+			};
+
+			cv::Point2f new_start = endpoints[0];
+			cv::Point2f new_end = endpoints[0];
+
+			float min_proj = projection(endpoints[0]);
+			float max_proj = projection(endpoints[0]);
+
+			for (const auto &p : endpoints) {
+				float proj = projection(p);
+
+				if (proj < min_proj) {
+					min_proj = proj;
+					new_start = p;
+				}
+
+				if (proj > max_proj) {
+					max_proj = proj;
+					new_end = p;
+				}
+			}
+
+			a.start = new_start;
+			a.end = new_end;
+		}
+	}
+	
+	std::vector<WallEstimate> merged;
+	merged.reserve(walls.size());
+
+	for (std::size_t i = 0; i < walls.size(); ++i) {
+		if (!removed[i]) {
+			merged.push_back(walls[i]);
+		}
+	}
+
+	walls = std::move(merged);
+}
+
+std::optional<WallEstimate> LidarProcessor::fit_wall(
 	const std::vector<CartesianPoint> &points) const {
-	WallEstimate result;
 
 	if (points.size() < 2) {
-		return result;
+		return std::nullopt;
 	}
 
 	float mean_x = 0.0f;
@@ -207,6 +309,7 @@ WallEstimate LidarProcessor::fit_wall(
 		sxy += dx * dy;
 	}
 
+	WallEstimate result;
 	const float theta = 0.5f * std::atan2(2.0f * sxy, sxx - syy);
 
 	const float dir_x = std::cos(theta);
@@ -225,7 +328,9 @@ WallEstimate LidarProcessor::fit_wall(
 		error_sum += distance * distance;
 	}
 
-	result.valid = true;
+	result.start = cv::Point2f(points.front().x_m, points.front().y_m);
+	result.end = cv::Point2f(points.back().x_m, points.back().y_m);
+
 	result.angle_rad = theta;
 
 	result.normal_x = normal_x;

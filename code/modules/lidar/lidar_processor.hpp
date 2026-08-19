@@ -3,12 +3,14 @@
 #include <algorithm>
 #include <cmath>
 #include <iostream>
+#include <optional>
 #include <vector>
 
 #include "lidar_struct.hpp"
+#include <opencv2/core/types.hpp>
 
 namespace lidar {
-	
+
 struct CartesianPoint {
 	float x_m;
 	float y_m;
@@ -16,13 +18,12 @@ struct CartesianPoint {
 };
 
 struct WallEstimate {
-	bool valid = false;
-
+	cv::Point2f start;
+	cv::Point2f end;
 	float angle_rad = 0.0f;
 
 	float normal_x = 0.0f;
 	float normal_y = 0.0f;
-
 	float line_c = 0.0f;
 
 	float rms_error_m = 0.0f;
@@ -40,10 +41,6 @@ struct ObstacleObject {
 
 struct ProcessedLidarData {
 	std::uint64_t timestamp_us{0};
-
-	// WallEstimate left_wall;
-	// WallEstimate right_wall;
-	// WallEstimate front_wall;
 
 	float front_distance_m{0.0f};
 	float left_distance_m{0.0f};
@@ -76,8 +73,12 @@ class LidarProcessor {
 		std::vector<std::vector<CartesianPoint>> &segments) const;
 
 	// clang-format on
-	WallEstimate fit_wall(const std::vector<CartesianPoint> &points) const;
+	std::optional<WallEstimate> fit_wall(
+		const std::vector<CartesianPoint> &points) const;
 
+	void merge_aligned_wall(std::vector<WallEstimate> &walls,
+		float max_angle_diff_rad, float max_collinear_error_m,
+		float max_gap_m) const;
 	// std::vector<ObstacleObject> detect_obstacles(
 	// 	const TimedLidarData &data) const;
 
