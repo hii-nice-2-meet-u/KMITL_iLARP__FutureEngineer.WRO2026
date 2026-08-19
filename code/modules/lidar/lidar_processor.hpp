@@ -51,6 +51,8 @@ class LidarProcessor {
   public:
 	ProcessedLidarData process(const TimedLidarData &data) const;
 
+	void draw_wall(cv::Mat &img, const WallEstimate &merged_wall) const;
+
   private:
 	bool is_valid_point(const LidarPoint &point) const;
 
@@ -81,8 +83,6 @@ class LidarProcessor {
 		float max_collinear_error_m,
 		float max_gap_m) const;
 	// clang-format on
-
-	void draw_wall(cv::Mat &img, const WallEstimate &merged_wall) const;
 
 	// std::vector<ObstacleObject> detect_obstacles(
 	// 	const TimedLidarData &data) const;
