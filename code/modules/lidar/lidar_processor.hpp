@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <cmath>
 #include <iostream>
-#include <opencv2/core/types.hpp>
 #include <vector>
 
 #include "lidar_struct.hpp"
@@ -28,11 +27,6 @@ struct WallEstimate {
 	float rms_error_m = 0.0f;
 };
 
-// struct WallEstimate {
-// 	bool valid{false};
-// 	float distance_m{0.0f};
-// 	float angle_rad{0.0f};
-// };
 
 struct ObstacleObject {
 	float angle_deg{0.0f};
@@ -65,14 +59,6 @@ class LidarProcessor {
 	bool is_valid_point(const LidarPoint &point) const;
 
 	CartesianPoint polar2cartesian(const LidarPoint &lidar_point) const;
-
-	std::vector<CartesianPoint> get_sector(
-		const TimedLidarData &data, float start_angle, float end_angle) const;
-
-	float median_distance(const std::vector<CartesianPoint> &points) const;
-
-	std::vector<CartesianPoint> extract_wall_candidates(
-		const std::vector<CartesianPoint> &points) const;
 
 	WallEstimate fit_wall(const std::vector<CartesianPoint> &points) const;
 
