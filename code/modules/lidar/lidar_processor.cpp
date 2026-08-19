@@ -1,58 +1,81 @@
 #include "lidar_processor.hpp"
+#include <iostream>
+#include <opencv2/core/types.hpp>
 
 namespace lidar {
+
 ProcessedLidarData LidarProcessor::process(const TimedLidarData &data) const {
+
 	ProcessedLidarData result;
 	result.timestamp_us = data.timestamp_us;
 	std::vector<CartesianPoint> points;
+
+	const auto t0 = std::chrono::steady_clock::now();
 
 	for (const auto &point : data.points) {
 		if (!is_valid_point(point)) continue;
 
 		points.push_back(polar2cartesian(point));
-		if (points.empty()) return result;
+	}
+	if (points.empty()) return result;
 
-		constexpr float MAX_LINE_ERROR_M = 0.02f;
-		constexpr float MAX_POINT_GAP_M = 0.08f;
-		constexpr std::size_t MIN_WALL_POINTS = 8;
+	const auto t1 = std::chrono::steady_clock::now();
 
-		const auto segments = split_wall_points(
-			points, MAX_LINE_ERROR_M, MAX_POINT_GAP_M, MIN_WALL_POINTS);
+	constexpr std::size_t MIN_WALL_POINTS = 8;
+	constexpr float MAX_LINE_ERROR_M = 0.035f;
+	constexpr float MAX_POINT_GAP_M = 0.11f;
 
-		std::vector<WallEstimate> walls;
-		walls.reserve(segments.size());
+	const auto segments = split_wall_points(
+		points, MAX_LINE_ERROR_M, MAX_POINT_GAP_M, MIN_WALL_POINTS);
 
-		for (const auto &segment : segments) {
+	const auto t2 = std::chrono::steady_clock::now();
 
-			const auto wall = fit_wall(segment);
+	std::vector<WallEstimate> walls;
+	walls.reserve(segments.size());
 
-			if (!wall.has_value()) {
-				continue;
-			}
+	for (const auto &segment : segments) {
 
-			// Reject bad line fitting
-			if (wall->rms_error_m > MAX_LINE_ERROR_M) {
-				continue;
-			}
+		const auto wall = fit_wall(segment);
 
-			walls.push_back(*wall);
+		if (!wall.has_value()) {
+			continue;
 		}
 
-		constexpr float MAX_ANGLE_DIFF_RAD =
-			5.0f * static_cast<float>(M_PI) / 180.0f;
+		if (wall->rms_error_m > MAX_LINE_ERROR_M) {
+			continue;
+		}
 
-		constexpr float MAX_COLLINEAR_ERROR_M = 0.03f;
-		constexpr float MAX_WALL_GAP_M = 0.10f;
-
-		merge_aligned_wall(
-			walls, MAX_ANGLE_DIFF_RAD, MAX_COLLINEAR_ERROR_M, MAX_WALL_GAP_M);
-
-		result.merged_walls = std::move(walls);
+		walls.push_back(*wall);
 	}
+
+	const auto t3 = std::chrono::steady_clock::now();
+
+	constexpr float MAX_ANGLE_DIFF_RAD =
+		5.0f * static_cast<float>(M_PI) / 180.0f;
+
+	constexpr float MAX_COLLINEAR_ERROR_M = 0.03f;
+	constexpr float MAX_WALL_GAP_M = 0.10f;
+
+	merge_aligned_wall(
+		walls, MAX_ANGLE_DIFF_RAD, MAX_COLLINEAR_ERROR_M, MAX_WALL_GAP_M);
+
+	const auto t4 = std::chrono::steady_clock::now();
+
+	result.merged_walls = std::move(walls);
+
+	const auto us = [](auto start, auto end) {
+		return std::chrono::duration_cast<std::chrono::microseconds>(
+			end - start)
+			.count();
+	};
+	std::cout << "Convert: " << us(t0, t1) / 1000.0 << " ms"
+			  << " | Split: " << us(t1, t2) / 1000.0 << " ms"
+			  << " | Fit: " << us(t2, t3) / 1000.0 << " ms"
+			  << " | Merge: " << us(t3, t4) / 1000.0 << " ms"
+			  << " | Segments: " << segments.size() << '\n';
 
 	return result;
 }
-
 bool LidarProcessor::is_valid_point(const LidarPoint &point) const {
 	if (point.quality < 50) return false;
 	if (point.distance_m < 0.01f) return false;
@@ -73,12 +96,10 @@ CartesianPoint LidarProcessor::polar2cartesian(const LidarPoint &point) const {
 	return result;
 }
 
-// clang-format off
+// clang-format on
 std::vector<std::vector<CartesianPoint>> LidarProcessor::split_wall_points(
-	const std::vector<CartesianPoint> &points,
-	float max_line_error_m,
-	float max_point_gap_m,
-	std::size_t min_points) const {
+	const std::vector<CartesianPoint> &points, float max_line_error_m,
+	float max_point_gap_m, std::size_t min_points) const {
 
 	std::vector<std::vector<CartesianPoint>> segments;
 
@@ -86,23 +107,15 @@ std::vector<std::vector<CartesianPoint>> LidarProcessor::split_wall_points(
 		return segments;
 	}
 
-	split_wall_points_recursive(
-		points, 
-		0, 
-		points.size() - 1, 
-		max_line_error_m,
-		max_point_gap_m, min_points, 
-		segments);
+	split_wall_points_recursive(points, 0, points.size() - 1, max_line_error_m,
+		max_point_gap_m, min_points, segments);
 
 	return segments;
 }
 
 void LidarProcessor::split_wall_points_recursive(
-	const std::vector<CartesianPoint> &points,
-	std::size_t start,
-	std::size_t end,
-	float max_line_error_m,
-	float max_point_gap_m,
+	const std::vector<CartesianPoint> &points, std::size_t start,
+	std::size_t end, float max_line_error_m, float max_point_gap_m,
 	std::size_t min_points,
 	std::vector<std::vector<CartesianPoint>> &segments) const {
 
@@ -131,7 +144,8 @@ void LidarProcessor::split_wall_points_recursive(
 	// Check Gap between 2 Points
 	for (std::size_t i = start; i < end; ++i) {
 
-		const float gap = std::hypot(points[i + 1].x_m - points[i].x_m, points[i + 1].y_m - points[i].y_m);
+		const float gap = std::hypot(points[i + 1].x_m - points[i].x_m,
+			points[i + 1].y_m - points[i].y_m);
 
 		if (gap > max_point_gap_m) {
 
@@ -156,7 +170,7 @@ void LidarProcessor::split_wall_points_recursive(
 
 		const float numerator = std::abs(
 
-			//Ax+ By +C / hypot(dy, dx)
+			// Ax+ By +C / hypot(dy, dx)
 			dy * px - dx * py + last.x_m * first.y_m - last.y_m * first.x_m);
 
 		const float distance = numerator / line_length;
@@ -167,9 +181,8 @@ void LidarProcessor::split_wall_points_recursive(
 		}
 	}
 
-	
-	if (max_error > max_line_error_m && split_index > start && split_index < end) {
-
+	if (max_error > max_line_error_m && split_index > start &&
+		split_index < end) {
 		split_wall_points_recursive(points, start, split_index,
 			max_line_error_m, max_point_gap_m, min_points, segments);
 
@@ -179,7 +192,6 @@ void LidarProcessor::split_wall_points_recursive(
 		return;
 	}
 
-	
 	std::vector<CartesianPoint> segment;
 
 	segment.reserve(count);
@@ -206,7 +218,7 @@ void LidarProcessor::merge_aligned_wall(std::vector<WallEstimate> &walls,
 		if (removed[i]) {
 			continue;
 		}
-		for (std::size_t j = i + 1; i < walls.size(); ++j) {
+		for (std::size_t j = i + 1; j < walls.size(); ++j) {
 			if (removed[j]) {
 				continue;
 			}
@@ -342,9 +354,15 @@ std::optional<WallEstimate> LidarProcessor::fit_wall(
 
 		error_sum += distance * distance;
 	}
+	auto project_to_line = [&](const CartesianPoint &p) -> cv::Point2f {
+		const float d = normal_x * p.x_m + normal_y * p.y_m + c;
+		return cv::Point2f(p.x_m - d * normal_x, p.y_m - d * normal_y);
+	};
 
-	result.start = cv::Point2f(points.front().x_m, points.front().y_m);
-	result.end = cv::Point2f(points.back().x_m, points.back().y_m);
+	result.start = project_to_line(points.front());
+	result.end = project_to_line(points.back());
+	// result.start = cv::Point2f(points.front().x_m, points.front().y_m);
+	// result.end = cv::Point2f(points.back().x_m, points.back().y_m);
 
 	result.angle_rad = theta;
 
@@ -358,24 +376,20 @@ std::optional<WallEstimate> LidarProcessor::fit_wall(
 	return result;
 }
 
-void ProcessedLidarData::draw_wall(
-	cv::Mat &img, const WallEstimate &merged_wall) const {
+void LidarProcessor::draw_wall(
+	cv::Mat &img, const WallEstimate &merged_wall, float scale_px_per_m) const {
 	if (img.empty()) {
 		return;
 	}
-
-	// Scale:
-	// 1 meter = 200 pixels
-	constexpr float PIXELS_PER_METER = 200.0f;
 
 	// LiDAR origin at center of image
 	const cv::Point2f origin(static_cast<float>(img.cols) * 0.5f,
 		static_cast<float>(img.rows) * 0.5f);
 
 	auto world_to_pixel = [&](const cv::Point2f &point_m) -> cv::Point {
-		const float pixel_x = origin.x + point_m.x * PIXELS_PER_METER;
+		const float pixel_x = origin.x + point_m.x * scale_px_per_m;
 
-		const float pixel_y = origin.y - point_m.y * PIXELS_PER_METER;
+		const float pixel_y = origin.y - point_m.y * scale_px_per_m;
 
 		return cv::Point(static_cast<int>(std::lround(pixel_x)),
 			static_cast<int>(std::lround(pixel_y)));

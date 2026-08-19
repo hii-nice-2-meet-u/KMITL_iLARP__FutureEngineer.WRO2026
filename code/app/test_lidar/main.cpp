@@ -1,10 +1,16 @@
+#include <chrono>
+#include <cmath>
+#include <cstdint>
 #include <iostream>
+
+#include <opencv2/opencv.hpp>
 
 #include "lidar_module.hpp"
 #include "lidar_processor.hpp"
 
 int main() {
 	lidar::LidarModule lidar;
+	lidar::LidarProcessor lidar_processor;
 
 	if (!lidar.initialize()) {
 		std::cerr << "Initialize failed\n";
@@ -18,71 +24,123 @@ int main() {
 
 	std::cout << "Waiting for LiDAR frames...\n";
 
-	for (int frame = 0; frame < 150; ++frame) {
+	// Debug map settings
+	constexpr int MAP_WIDTH = 800;
+	constexpr int MAP_HEIGHT = 800;
+
+	// 1 meter = 300 pixels
+	constexpr float SCALE_PX_PER_M = 300.0f;
+
+	cv::Mat debug_map(MAP_HEIGHT, MAP_WIDTH, CV_8UC3, cv::Scalar(0, 0, 0));
+
+	const cv::Point2f origin(static_cast<float>(MAP_WIDTH) * 0.5f,
+		static_cast<float>(MAP_HEIGHT) * 0.5f);
+
+	std::uint64_t timestamp_prev = 0;
+
+	while (true) {
 		TimedLidarData scan;
-		lidar::LidarProcessor lidar_processor;
 
 		if (!lidar.wait_for_data(scan)) {
 			std::cerr << "Failed to get LiDAR data\n";
 			break;
 		}
-		float sum_distance = 0.0f;
-		std::size_t count = 0;
+
+		if (scan.points.empty()) {
+			continue;
+		}
+
+		// Process LiDAR
+
+		const auto process_start = std::chrono::steady_clock::now();
+
+		const lidar::ProcessedLidarData processed =
+			lidar_processor.process(scan);
+
+		const auto process_end = std::chrono::steady_clock::now();
+
+		const auto process_us =
+			std::chrono::duration_cast<std::chrono::microseconds>(
+				process_end - process_start)
+				.count();
+
+		// Calculate frame interval
+
+		std::uint64_t frame_diff_us = 0;
+
+		if (timestamp_prev != 0) {
+			frame_diff_us = processed.timestamp_us - timestamp_prev;
+		}
+
+		timestamp_prev = processed.timestamp_us;
+
+		// Clear previous frame
+
+		debug_map.setTo(cv::Scalar(0, 0, 0));
 
 		for (const auto &point : scan.points) {
-			if (point.angle_deg >= 85.0f && point.angle_deg <= 95.0f &&
-				point.distance_m > 0.0f) {
-
-				sum_distance += point.distance_m;
-				++count;
+			if (point.distance_m <= 0.0f) {
+				continue;
 			}
+
+			const float angle_rad =
+				point.angle_deg * static_cast<float>(CV_PI) / 180.0f;
+
+			const float x_m = point.distance_m * std::cos(angle_rad);
+
+			const float y_m = point.distance_m * std::sin(angle_rad);
+
+			const int px = static_cast<int>(origin.x + x_m * SCALE_PX_PER_M);
+
+			const int py = static_cast<int>(origin.y - y_m * SCALE_PX_PER_M);
+
+			if (px < 0 || px >= debug_map.cols || py < 0 ||
+				py >= debug_map.rows) {
+				continue;
+			}
+
+			cv::circle(
+				debug_map, cv::Point(px, py), 1, cv::Scalar(255, 255, 255), -1);
 		}
-		if (count > 0) {
-			const float avg_distance = sum_distance / static_cast<float>(count);
 
-			std::cout << "Raw 90 deg AVG" << " | Distance: " << avg_distance
-					  << " m" << " | Samples: " << count << '\n';
-		} else {
-			std::cout << "Raw 90 deg AVG | No valid points\n";
+		for (const auto &wall : processed.merged_walls) {
+			lidar_processor.draw_wall(debug_map, wall, SCALE_PX_PER_M);
 		}
 
-		if (!scan.points.empty()) {
-			// const auto &point = scan.points[scan.points.size() / 4];
-			// const auto &point = scan.points.back();
-			const lidar::ProcessedLidarData processed =
-				lidar_processor.process(scan);
+		cv::circle(debug_map,
+			cv::Point(static_cast<int>(origin.x), static_cast<int>(origin.y)),
+			5, cv::Scalar(0, 0, 255), -1);
 
+		const std::string info =
+			"Points: " + std::to_string(scan.points.size()) +
+			"  Walls: " + std::to_string(processed.merged_walls.size());
 
-							 std::cout
-					  << "Frame: " << frame
-					  << " | Points: " << scan.points.size()
-					  << " | Timestamp: " << scan.timestamp_us << '\n';
+		cv::putText(debug_map, info, cv::Point(10, 25),
+			cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(255, 255, 255), 1,
+			cv::LINE_AA);
 
-			std::cout << "Distance"
-					  << " | Front: " << processed.front_distance_m << " m"
-					  << " | Left: " << processed.left_distance_m << " m"
-					  << " | Right: " << processed.right_distance_m << " m\n";
+		const std::string timing =
+			"Process: " + std::to_string(process_us / 1000.0) +
+			" ms  Frame: " + std::to_string(frame_diff_us / 1000.0) + " ms";
 
-			std::cout << "Left wall"
-					  << " | Valid: " << processed.left_wall.valid
-					  << " | Distance: " << processed.left_wall.distance_m
-					  << " m" << " | Angle: " << processed.left_wall.angle_deg
-					  << " deg\n";
+		cv::putText(debug_map, timing, cv::Point(10, 50),
+			cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(255, 255, 255), 1,
+			cv::LINE_AA);
 
-			std::cout << "Right wall"
-					  << " | Valid: " << processed.right_wall.valid
-					  << " | Distance: " << processed.right_wall.distance_m
-					  << " m" << " | Angle: " << processed.right_wall.angle_deg
-					  << " deg\n";
+		// Show
 
-			std::cout << "Front wall"
-					  << " | Valid: " << processed.front_wall.valid
-					  << " | Distance: " << processed.front_wall.distance_m
-					  << " m" << " | Angle: " << processed.front_wall.angle_deg
-					  << " deg\n\n";
+		cv::imshow("LiDAR Debug Map", debug_map);
+
+		const int key = cv::waitKey(1);
+
+		if (key == 'q' || key == 27) {
+			break;
 		}
 	}
+
 	lidar.stop();
+
+	cv::destroyAllWindows();
 
 	return 0;
 }

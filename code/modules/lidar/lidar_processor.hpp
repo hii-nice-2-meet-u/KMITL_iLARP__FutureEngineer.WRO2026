@@ -51,7 +51,8 @@ class LidarProcessor {
   public:
 	ProcessedLidarData process(const TimedLidarData &data) const;
 
-	void draw_wall(cv::Mat &img, const WallEstimate &merged_wall) const;
+	void draw_wall(cv::Mat &img, const WallEstimate &merged_wall,
+		float scale_px_per_m) const;
 
   private:
 	bool is_valid_point(const LidarPoint &point) const;

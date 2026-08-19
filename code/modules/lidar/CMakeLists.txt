@@ -30,6 +30,11 @@ target_include_directories(lidar_processor
         ${CMAKE_SOURCE_DIR}/utils
 )
 
+target_link_libraries(lidar_processor
+    PUBLIC
+        ${OpenCV_LIBS}
+)
+
 # Target: lidar_module
 add_library(lidar_module STATIC 
     lidar_module.cpp 
