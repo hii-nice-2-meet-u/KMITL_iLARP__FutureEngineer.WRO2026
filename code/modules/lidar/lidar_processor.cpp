@@ -1,6 +1,4 @@
 #include "lidar_processor.hpp"
-#include <cmath>
-#include <cstddef>
 
 namespace lidar {
 ProcessedLidarData LidarProcessor::process(const TimedLidarData &data) const {
@@ -358,6 +356,37 @@ std::optional<WallEstimate> LidarProcessor::fit_wall(
 	result.rms_error_m = std::sqrt(error_sum / n);
 
 	return result;
+}
+
+void ProcessedLidarData::draw_wall(
+	cv::Mat &img, const WallEstimate &merged_wall) const {
+	if (img.empty()) {
+		return;
+	}
+
+	// Scale:
+	// 1 meter = 200 pixels
+	constexpr float PIXELS_PER_METER = 200.0f;
+
+	// LiDAR origin at center of image
+	const cv::Point2f origin(static_cast<float>(img.cols) * 0.5f,
+		static_cast<float>(img.rows) * 0.5f);
+
+	auto world_to_pixel = [&](const cv::Point2f &point_m) -> cv::Point {
+		const float pixel_x = origin.x + point_m.x * PIXELS_PER_METER;
+
+		const float pixel_y = origin.y - point_m.y * PIXELS_PER_METER;
+
+		return cv::Point(static_cast<int>(std::lround(pixel_x)),
+			static_cast<int>(std::lround(pixel_y)));
+	};
+
+	const cv::Point start_px = world_to_pixel(merged_wall.start);
+
+	const cv::Point end_px = world_to_pixel(merged_wall.end);
+
+	// Draw fitted / merged wall
+	cv::line(img, start_px, end_px, cv::Scalar(0, 255, 0), 2, cv::LINE_AA);
 }
 
 } // namespace lidar
