@@ -55,20 +55,18 @@ struct TrackWalls {
 };
 
 struct ObstacleObject {
-	float angle_deg{0.0f};
-	float distance_m{0.0f};
-
-	float x_m{0.0f};
-	float y_m{0.0f};
-
-	float width_m{0.0f};
+	cv::Point2f center;
+	float distance_m = 0.0f;
+	float width_m = 0.0f;
 };
 
 struct ProcessedLidarData {
 	std::uint64_t timestamp_us{0};
+
 	std::vector<LineSegment> line_segments;
-	std::vector<ObstacleObject> obstacles;
 	ResolvedWalls walls;
+
+	std::vector<ObstacleObject> obstacles;
 };
 
 class LidarProcessor {
@@ -112,6 +110,9 @@ class LidarProcessor {
 	// clang-format on
 
 	ResolvedWalls resolve_track_walls(
+		const std::vector<LineSegment> &segments) const;
+
+	bool is_wall_point(const CartesianPoint &point,
 		const std::vector<LineSegment> &segments) const;
 
 	// std::vector<ObstacleObject> detect_obstacles(

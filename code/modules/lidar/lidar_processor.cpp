@@ -416,22 +416,48 @@ ResolvedWalls LidarProcessor::resolve_track_walls(
 }
 
 TrackWalls LidarProcessor::resolve_inner_outer(
-    const ResolvedWalls &walls,
-    DrivingDirection direction) {
+	const ResolvedWalls &walls, DrivingDirection direction) {
 
-    TrackWalls result;
+	TrackWalls result;
 
-    result.front = walls.front;
+	result.front = walls.front;
 
-    if (direction == DrivingDirection::CLOCKWISE) {
-        result.inner = walls.right;
-        result.outer = walls.left;
-    } else {
-        result.inner = walls.left;
-        result.outer = walls.right;
-    }
+	if (direction == DrivingDirection::CLOCKWISE) {
+		result.inner = walls.right;
+		result.outer = walls.left;
+	} else {
+		result.inner = walls.left;
+		result.outer = walls.right;
+	}
 
-    return result;
+	return result;
+}
+
+bool LidarProcessor::is_wall_point(const CartesianPoint &point,
+	const std::vector<LineSegment> &segments) const {
+
+	constexpr float MIN_WALL_LENGTH_M = 0.25f;
+	constexpr float WALL_REJECT_DISTANCE_M = 0.05f;
+
+	for (const auto &segment : segments) {
+
+		const float dx = segment.end.x - segment.start.x;
+
+		const float dy = segment.end.y - segment.start.y;
+
+		const float length_sq = dx * dx + dy * dy;
+
+		if (length_sq < MIN_WALL_LENGTH_M * MIN_WALL_LENGTH_M) {
+			continue;
+		}
+
+		if (is_point_near_segment(point, segment, WALL_REJECT_DISTANCE_M)) {
+
+			return true;
+		}
+	}
+
+	return false;
 }
 
 void LidarProcessor::draw_segment(
