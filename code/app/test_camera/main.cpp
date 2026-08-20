@@ -72,7 +72,7 @@ int main() {
 			cv::circle(display_frame, object.bottom_center, 5, draw_color, -1);
 
 			const std::string text1 =
-				color_name + " bearing: " + std::to_string(object.bearing_deg);
+				color_name + " bearing: " + std::to_string(object.bearing_rad);
 			const std::string text2 = color_name +
 				" width: " + std::to_string(object.bounding_box.width) +
 				", height: " + std::to_string(object.bounding_box.height);
@@ -91,7 +91,7 @@ int main() {
 					  << " | y: " << object.bounding_box.y
 					  << " | w: " << object.bounding_box.width
 					  << " | h: " << object.bounding_box.height
-					  << " | bearing: " << object.bearing_deg << '\n';
+					  << " | bearing: " << object.bearing_rad << '\n';
 		}
 
 		std::cout << "Timestamp: " << processed.timestamp_us

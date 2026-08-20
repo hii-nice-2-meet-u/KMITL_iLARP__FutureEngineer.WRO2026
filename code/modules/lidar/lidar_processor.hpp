@@ -20,7 +20,7 @@ struct CartesianPoint {
 	float distance_m; // in meter
 };
 
-struct WallEstimate {
+struct LineSegment {
 	cv::Point2f start;
 	cv::Point2f end;
 	float angle_rad = 0.0f;
@@ -44,15 +44,15 @@ struct ObstacleObject {
 
 struct ProcessedLidarData {
 	std::uint64_t timestamp_us{0};
-	std::vector<WallEstimate> merged_walls;
+	std::vector<LineSegment> line_segments;
 	std::vector<ObstacleObject> obstacles;
 };
 class LidarProcessor {
   public:
 	ProcessedLidarData process(const TimedLidarData &data) const;
 
-	void draw_wall(cv::Mat &img, const WallEstimate &merged_wall,
-		float scale_px_per_m) const;
+	void draw_segment(
+		cv::Mat &img, const LineSegment &segment, float scale_px_per_m) const;
 
   private:
 	bool is_valid_point(const LidarPoint &point) const;
@@ -60,27 +60,28 @@ class LidarProcessor {
 	CartesianPoint polar2cartesian(const LidarPoint &lidar_point) const;
 
 	// clang-format off
-	std::vector<std::vector<CartesianPoint>> split_wall_points(
+	std::vector<std::vector<CartesianPoint>> split_line_segments(
 		const std::vector<CartesianPoint> &points,
 		float max_line_error_m,
 		float max_point_gap_m,
 		std::size_t min_points) const;
 
-	void split_wall_points_recursive(
+	void split_line_segments_recursive(
 		const std::vector<CartesianPoint> &points,
-		std::size_t start, std::size_t end,
+		std::size_t start,
+		std::size_t end,
 		float max_line_error_m,
 		float max_point_gap_m,
 		std::size_t min_points,
 		std::vector<std::vector<CartesianPoint>> &segments) const;
 
 	
-	std::optional<WallEstimate> fit_wall(
-		const std::vector<CartesianPoint> &points) const;
+	std::optional<LineSegment> fit_line_segment(
+    	const std::vector<CartesianPoint> &points) const;
 
-	void merge_aligned_wall(
-		std::vector<WallEstimate> &walls,
-		float max_angle_diff_rad, 
+	void merge_aligned_segments(
+		std::vector<LineSegment> &segments,
+		float max_angle_diff_rad,
 		float max_collinear_error_m,
 		float max_gap_m) const;
 	// clang-format on

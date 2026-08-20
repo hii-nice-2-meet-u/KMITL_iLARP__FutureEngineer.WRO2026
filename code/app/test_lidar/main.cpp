@@ -78,33 +78,8 @@ int main() {
 
 		debug_map.setTo(cv::Scalar(0, 0, 0));
 
-		for (const auto &point : scan.points) {
-			if (point.distance_m <= 0.0f) {
-				continue;
-			}
-
-			const float angle_rad =
-				point.angle_deg * static_cast<float>(CV_PI) / 180.0f;
-
-			const float x_m = point.distance_m * std::cos(angle_rad);
-
-			const float y_m = point.distance_m * std::sin(angle_rad);
-
-			const int px = static_cast<int>(origin.x + x_m * SCALE_PX_PER_M);
-
-			const int py = static_cast<int>(origin.y - y_m * SCALE_PX_PER_M);
-
-			if (px < 0 || px >= debug_map.cols || py < 0 ||
-				py >= debug_map.rows) {
-				continue;
-			}
-
-			cv::circle(
-				debug_map, cv::Point(px, py), 1, cv::Scalar(255, 255, 255), -1);
-		}
-
-		for (const auto &wall : processed.merged_walls) {
-			lidar_processor.draw_wall(debug_map, wall, SCALE_PX_PER_M);
+		for (const auto &wall : processed.line_segments) {
+			lidar_processor.draw_segment(debug_map, wall, SCALE_PX_PER_M);
 		}
 
 		cv::circle(debug_map,
@@ -113,7 +88,7 @@ int main() {
 
 		const std::string info =
 			"Points: " + std::to_string(scan.points.size()) +
-			"  Walls: " + std::to_string(processed.merged_walls.size());
+			"  Walls: " + std::to_string(processed.line_segments.size());
 
 		cv::putText(debug_map, info, cv::Point(10, 25),
 			cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(255, 255, 255), 1,
