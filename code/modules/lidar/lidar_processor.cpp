@@ -1,4 +1,5 @@
 #include "lidar_processor.hpp"
+#include <cmath>
 #include <iostream>
 #include <opencv2/core/types.hpp>
 
@@ -17,7 +18,7 @@ ProcessedLidarData LidarProcessor::process(const TimedLidarData &data) const {
 	}
 	if (points.empty()) return result;
 
-	constexpr std::size_t MIN_SEGMENT_POINTS = 8;
+	constexpr std::size_t MIN_SEGMENT_POINTS = 5;
 	constexpr float MAX_LINE_ERROR_M = 0.035f;
 	constexpr float MAX_POINT_GAP_M = 0.11f;
 
@@ -25,7 +26,7 @@ ProcessedLidarData LidarProcessor::process(const TimedLidarData &data) const {
 		points, MAX_LINE_ERROR_M, MAX_POINT_GAP_M, MIN_SEGMENT_POINTS);
 
 	std::vector<LineSegment> segments;
-	segments.reserve(segments.size());
+	segments.reserve(point_segments.size());
 
 	for (const auto &point_segment : point_segments) {
 		const auto line_segment = fit_line_segment(point_segment);
@@ -40,17 +41,25 @@ ProcessedLidarData LidarProcessor::process(const TimedLidarData &data) const {
 	constexpr float MAX_ANGLE_DIFF_RAD =
 		5.0f * static_cast<float>(M_PI) / 180.0f;
 
-	constexpr float MAX_COLLINEAR_ERROR_M = 0.03f;
-	constexpr float MAX_SEGMENT_GAP_M = 0.10f;
+	constexpr float MAX_COLLINEAR_ERROR_M = 0.02f;
+	constexpr float MAX_SEGMENT_GAP_M = 0.05f;
 
 	merge_aligned_segments(
 		segments, MAX_ANGLE_DIFF_RAD, MAX_COLLINEAR_ERROR_M, MAX_SEGMENT_GAP_M);
 
-	result.walls = resolve_track_walls(segments);
+	const ResolvedWalls walls = resolve_track_walls(segments);
+
+	const auto obstacle_segments = detect_obstacle_segments(segments, walls);
+
+	result.walls = walls;
+
+	result.obstacles = obstacle_segments;
+
 	result.line_segments = std::move(segments);
 
 	return result;
 }
+
 bool LidarProcessor::is_valid_point(const LidarPoint &point) const {
 	if (point.quality < 50) return false;
 	if (point.distance_m < 0.01f) return false;
@@ -433,31 +442,159 @@ TrackWalls LidarProcessor::resolve_inner_outer(
 	return result;
 }
 
-bool LidarProcessor::is_wall_point(const CartesianPoint &point,
-	const std::vector<LineSegment> &segments) const {
+bool LidarProcessor::is_same_segment(
+	const LineSegment &a, const std::optional<LineSegment> &b) const {
 
-	constexpr float MIN_WALL_LENGTH_M = 0.25f;
-	constexpr float WALL_REJECT_DISTANCE_M = 0.05f;
+	if (!b.has_value()) {
+		return false;
+	}
 
-	for (const auto &segment : segments) {
+	constexpr float EPSILON_M = 0.001f;
 
-		const float dx = segment.end.x - segment.start.x;
+	auto same_point = [](const cv::Point2f &p1, const cv::Point2f &p2) {
+		const float dx = p1.x - p2.x;
+		const float dy = p1.y - p2.y;
 
-		const float dy = segment.end.y - segment.start.y;
+		return dx * dx + dy * dy < EPSILON_M * EPSILON_M;
+	};
 
-		const float length_sq = dx * dx + dy * dy;
+	// ปกติ
+	if (same_point(a.start, b->start) && same_point(a.end, b->end)) {
+		return true;
+	}
 
-		if (length_sq < MIN_WALL_LENGTH_M * MIN_WALL_LENGTH_M) {
-			continue;
-		}
-
-		if (is_point_near_segment(point, segment, WALL_REJECT_DISTANCE_M)) {
-
-			return true;
-		}
+	// start/end กลับด้าน
+	if (same_point(a.start, b->end) && same_point(a.end, b->start)) {
+		return true;
 	}
 
 	return false;
+}
+
+bool LidarProcessor::is_wall_fragment(
+	const LineSegment &segment, const std::optional<LineSegment> &wall) const {
+
+	if (!wall.has_value()) {
+		return false;
+	}
+
+	constexpr float MAX_WALL_DISTANCE_M = 0.04f;
+	constexpr float MAX_ANGLE_DIFF_RAD =
+		10.0f * static_cast<float>(M_PI) / 180.0f;
+
+	const cv::Point2f center = (segment.start + segment.end) * 0.5f;
+
+	const float distance_to_wall = std::abs(
+		wall->normal_x * center.x + wall->normal_y * center.y + wall->line_c);
+
+	if (distance_to_wall > MAX_WALL_DISTANCE_M) {
+		return false;
+	}
+
+	if (segment.length() < 0.10f) {
+		return true;
+	}
+
+	float angle_diff = std::abs(segment.angle_rad - wall->angle_rad);
+
+	angle_diff = std::fmod(angle_diff, static_cast<float>(M_PI));
+
+	if (angle_diff > static_cast<float>(M_PI) * 0.5f) {
+		angle_diff = static_cast<float>(M_PI) - angle_diff;
+	}
+
+	return angle_diff < MAX_ANGLE_DIFF_RAD;
+}
+
+std::vector<LineSegment> LidarProcessor::detect_obstacle_segments(
+	const std::vector<LineSegment> &segments,
+	const ResolvedWalls &walls) const {
+
+	std::vector<LineSegment> obstacles;
+	obstacles.reserve(segments.size());
+
+	constexpr float MIN_OBSTACLE_SEGMENT_LENGTH_M = 0.028f;
+	constexpr float MAX_OBSTACLE_SEGMENT_LENGTH_M = 0.08f;
+	constexpr float SAME_OBSTACLE_DISTANCE_SQ = pow(0.08f, 2);
+
+	for (const auto &segment : segments) {
+
+		const cv::Point2f center = (segment.start + segment.end) * 0.5f;
+
+		const float length = segment.length();
+
+		if (is_same_segment(segment, walls.left) ||
+			is_same_segment(segment, walls.right) ||
+			is_same_segment(segment, walls.front)) {
+
+			continue;
+		}
+
+		if (is_wall_fragment(segment, walls.left) ||
+			is_wall_fragment(segment, walls.right) ||
+			is_wall_fragment(segment, walls.front)) {
+
+			continue;
+		}
+		if (length < MIN_OBSTACLE_SEGMENT_LENGTH_M) continue;
+
+		if (length > MAX_OBSTACLE_SEGMENT_LENGTH_M) continue;
+
+		if (center.y <= 0.0f) continue;
+
+		bool merged = false;
+
+		for (auto &existing : obstacles) {
+
+			const cv::Point2f existing_center =
+				(existing.start + existing.end) * 0.5f;
+
+			const float center_dx = center.x - existing_center.x;
+
+			const float center_dy = center.y - existing_center.y;
+
+			const float center_distance_sq =
+				center_dx * center_dx + center_dy * center_dy;
+
+			if (center_distance_sq > SAME_OBSTACLE_DISTANCE_SQ) {
+
+				continue;
+			}
+
+			const cv::Point2f merged_center = (existing_center + center) * 0.5f;
+
+			LineSegment merged_segment;
+
+			if (segment.length() > existing.length()) {
+				merged_segment = segment;
+			} else {
+				merged_segment = existing;
+			}
+
+			const cv::Point2f old_center =
+				(merged_segment.start + merged_segment.end) * 0.5f;
+
+			const cv::Point2f offset = merged_center - old_center;
+
+			merged_segment.start += offset;
+			merged_segment.end += offset;
+
+			merged_segment.line_c =
+				-(merged_segment.normal_x * merged_center.x +
+					merged_segment.normal_y * merged_center.y);
+
+			existing = merged_segment;
+
+			merged = true;
+			break;
+		}
+
+		if (!merged) {
+			obstacles.push_back(segment);
+		}
+	}
+
+	return obstacles;
 }
 
 void LidarProcessor::draw_segment(
@@ -480,7 +617,6 @@ void LidarProcessor::draw_segment(
 	};
 
 	const cv::Point start_px = world_to_pixel(segment.start);
-
 	const cv::Point end_px = world_to_pixel(segment.end);
 
 	// Draw fitted / merged segment

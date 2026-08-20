@@ -66,7 +66,7 @@ struct ProcessedLidarData {
 	std::vector<LineSegment> line_segments;
 	ResolvedWalls walls;
 
-	std::vector<ObstacleObject> obstacles;
+	std::vector<LineSegment> obstacles;
 };
 
 class LidarProcessor {
@@ -111,14 +111,18 @@ class LidarProcessor {
 
 	ResolvedWalls resolve_track_walls(
 		const std::vector<LineSegment> &segments) const;
+	TrackWalls resolve_inner_outer(
+		const ResolvedWalls &walls, DrivingDirection direction);
 
-	bool is_wall_point(const CartesianPoint &point,
-		const std::vector<LineSegment> &segments) const;
+	bool is_same_segment(
+		const LineSegment &a, const std::optional<LineSegment> &b) const;
 
-	// std::vector<ObstacleObject> detect_obstacles(
-	// 	const TimedLidarData &data) const;
+	bool is_wall_fragment(const LineSegment &segment,
+		const std::optional<LineSegment> &wall) const;
 
-	// float calculate_bearing(float x_m, float y_m) const;
+	std::vector<LineSegment> detect_obstacle_segments(
+		const std::vector<LineSegment> &segments,
+		const ResolvedWalls &walls) const;
 };
 
 } // namespace lidar
