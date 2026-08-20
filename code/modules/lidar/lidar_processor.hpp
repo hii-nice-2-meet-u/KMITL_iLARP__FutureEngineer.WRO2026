@@ -30,6 +30,20 @@ struct LineSegment {
 	float line_c = 0.0f;
 
 	float rms_error_m = 0.0f;
+	
+	float length() const {
+		const float dx = end.x - start.x;
+		const float dy = end.y - start.y;
+		return std::sqrt(dx * dx + dy * dy);
+	}
+
+	float perpendicular_distance() const { return std::abs(line_c); }
+};
+
+struct ResolvedWalls {
+	std::optional<LineSegment> left;
+	std::optional<LineSegment> right;
+	std::optional<LineSegment> front;
 };
 
 struct ObstacleObject {
@@ -47,6 +61,7 @@ struct ProcessedLidarData {
 	std::vector<LineSegment> line_segments;
 	std::vector<ObstacleObject> obstacles;
 };
+
 class LidarProcessor {
   public:
 	ProcessedLidarData process(const TimedLidarData &data) const;
@@ -84,7 +99,11 @@ class LidarProcessor {
 		float max_angle_diff_rad,
 		float max_collinear_error_m,
 		float max_gap_m) const;
+
 	// clang-format on
+
+	std::vector<ResolvedWalls> classify_track_walls(
+		const std::vector<LineSegment> &segments) const;
 
 	// std::vector<ObstacleObject> detect_obstacles(
 	// 	const TimedLidarData &data) const;

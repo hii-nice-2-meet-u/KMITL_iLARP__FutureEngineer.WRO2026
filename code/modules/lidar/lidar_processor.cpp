@@ -34,16 +34,11 @@ ProcessedLidarData LidarProcessor::process(const TimedLidarData &data) const {
 	segments.reserve(segments.size());
 
 	for (const auto &point_segment : point_segments) {
-
 		const auto line_segment = fit_line_segment(point_segment);
 
-		if (!line_segment.has_value()) {
-			continue;
-		}
+		if (!line_segment.has_value()) continue;
 
-		if (line_segment->rms_error_m > MAX_LINE_ERROR_M) {
-			continue;
-		}
+		if (line_segment->rms_error_m > MAX_LINE_ERROR_M) continue;
 
 		segments.push_back(*line_segment);
 	}
@@ -67,14 +62,19 @@ ProcessedLidarData LidarProcessor::process(const TimedLidarData &data) const {
 			.count();
 	};
 
-	std::cout << "Convert: " << us(t0, t1) / 1000.0 << " ms"
-			  << " | Split: " << us(t1, t2) / 1000.0 << " ms"
-			  << " | Fit: " << us(t2, t3) / 1000.0 << " ms"
-			  << " | Merge: " << us(t3, t4) / 1000.0 << " ms"
-			  << " | Segments: " << segments.size() << '\n';
+	// std::cout << "Convert: " << us(t0, t1) / 1000.0 << " ms"
+	// 		  << " | Split: " << us(t1, t2) / 1000.0 << " ms"
+	// 		  << " | Fit: " << us(t2, t3) / 1000.0 << " ms"
+	// 		  << " | Merge: " << us(t3, t4) / 1000.0 << " ms"
+	// 		  << " | Segments: " << segments.size() << '\n';
 
+	for (const auto &segment_p : segments) {
+
+		std::cout << segment_p.length() << "     "
+				  << segment_p.perpendicular_distance() << '\n';
+	}
+	std::cout << "\n";
 	result.line_segments = std::move(segments);
-
 	return result;
 }
 bool LidarProcessor::is_valid_point(const LidarPoint &point) const {
@@ -383,6 +383,15 @@ std::optional<LineSegment> LidarProcessor::fit_line_segment(
 	return result;
 }
 
+std::vector<ResolvedWalls> LidarProcessor::classify_track_walls(
+	const std::vector<LineSegment> &segments) const {
+		
+	ResolvedWalls result;
+
+	for (const auto &segment_p : segments) {
+	}
+}
+
 void LidarProcessor::draw_segment(
 	cv::Mat &img, const LineSegment &segment, float scale_px_per_m) const {
 	if (img.empty()) {
@@ -409,5 +418,4 @@ void LidarProcessor::draw_segment(
 	// Draw fitted / merged segment
 	cv::line(img, start_px, end_px, cv::Scalar(0, 255, 0), 2, cv::LINE_AA);
 }
-
 } // namespace lidar
