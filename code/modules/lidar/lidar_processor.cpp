@@ -415,6 +415,25 @@ ResolvedWalls LidarProcessor::resolve_track_walls(
 	return result;
 }
 
+TrackWalls LidarProcessor::resolve_inner_outer(
+    const ResolvedWalls &walls,
+    DrivingDirection direction) {
+
+    TrackWalls result;
+
+    result.front = walls.front;
+
+    if (direction == DrivingDirection::CLOCKWISE) {
+        result.inner = walls.right;
+        result.outer = walls.left;
+    } else {
+        result.inner = walls.left;
+        result.outer = walls.right;
+    }
+
+    return result;
+}
+
 void LidarProcessor::draw_segment(
 	cv::Mat &img, const LineSegment &segment, float scale_px_per_m) const {
 	if (img.empty()) {

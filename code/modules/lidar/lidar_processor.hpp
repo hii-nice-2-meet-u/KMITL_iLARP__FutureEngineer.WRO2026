@@ -46,6 +46,14 @@ struct ResolvedWalls {
 	std::optional<LineSegment> front;
 };
 
+enum class DrivingDirection { CLOCKWISE, COUNTER_CLOCKWISE };
+
+struct TrackWalls {
+	std::optional<LineSegment> inner;
+	std::optional<LineSegment> outer;
+	std::optional<LineSegment> front;
+};
+
 struct ObstacleObject {
 	float angle_deg{0.0f};
 	float distance_m{0.0f};
