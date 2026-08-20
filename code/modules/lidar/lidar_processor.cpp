@@ -10,8 +10,6 @@ ProcessedLidarData LidarProcessor::process(const TimedLidarData &data) const {
 	result.timestamp_us = data.timestamp_us;
 	std::vector<CartesianPoint> points;
 
-	const auto t0 = std::chrono::steady_clock::now();
-
 	for (const auto &point : data.points) {
 		if (!is_valid_point(point)) continue;
 
@@ -19,16 +17,12 @@ ProcessedLidarData LidarProcessor::process(const TimedLidarData &data) const {
 	}
 	if (points.empty()) return result;
 
-	const auto t1 = std::chrono::steady_clock::now();
-
 	constexpr std::size_t MIN_SEGMENT_POINTS = 8;
 	constexpr float MAX_LINE_ERROR_M = 0.035f;
 	constexpr float MAX_POINT_GAP_M = 0.11f;
 
 	const auto point_segments = split_line_segments(
 		points, MAX_LINE_ERROR_M, MAX_POINT_GAP_M, MIN_SEGMENT_POINTS);
-
-	const auto t2 = std::chrono::steady_clock::now();
 
 	std::vector<LineSegment> segments;
 	segments.reserve(segments.size());
@@ -43,8 +37,6 @@ ProcessedLidarData LidarProcessor::process(const TimedLidarData &data) const {
 		segments.push_back(*line_segment);
 	}
 
-	const auto t3 = std::chrono::steady_clock::now();
-
 	constexpr float MAX_ANGLE_DIFF_RAD =
 		5.0f * static_cast<float>(M_PI) / 180.0f;
 
@@ -54,27 +46,9 @@ ProcessedLidarData LidarProcessor::process(const TimedLidarData &data) const {
 	merge_aligned_segments(
 		segments, MAX_ANGLE_DIFF_RAD, MAX_COLLINEAR_ERROR_M, MAX_SEGMENT_GAP_M);
 
-	const auto t4 = std::chrono::steady_clock::now();
-
-	const auto us = [](auto start, auto end) {
-		return std::chrono::duration_cast<std::chrono::microseconds>(
-			end - start)
-			.count();
-	};
-
-	// std::cout << "Convert: " << us(t0, t1) / 1000.0 << " ms"
-	// 		  << " | Split: " << us(t1, t2) / 1000.0 << " ms"
-	// 		  << " | Fit: " << us(t2, t3) / 1000.0 << " ms"
-	// 		  << " | Merge: " << us(t3, t4) / 1000.0 << " ms"
-	// 		  << " | Segments: " << segments.size() << '\n';
-
-	for (const auto &segment_p : segments) {
-
-		std::cout << segment_p.length() << "     "
-				  << segment_p.perpendicular_distance() << '\n';
-	}
-	std::cout << "\n";
+	result.walls = resolve_track_walls(segments);
 	result.line_segments = std::move(segments);
+
 	return result;
 }
 bool LidarProcessor::is_valid_point(const LidarPoint &point) const {
@@ -383,13 +357,62 @@ std::optional<LineSegment> LidarProcessor::fit_line_segment(
 	return result;
 }
 
-std::vector<ResolvedWalls> LidarProcessor::classify_track_walls(
+ResolvedWalls LidarProcessor::resolve_track_walls(
 	const std::vector<LineSegment> &segments) const {
-		
+
 	ResolvedWalls result;
 
-	for (const auto &segment_p : segments) {
+	constexpr float MIN_WALL_LENGTH_M = 0.25f;
+
+	constexpr float MAX_ANGLE_ERROR_RAD =
+		15.0f * static_cast<float>(M_PI) / 180.0f;
+
+	for (const auto &segment : segments) {
+
+		if (segment.length() < MIN_WALL_LENGTH_M) continue;
+
+		const cv::Point2f center = (segment.start + segment.end) * 0.5f;
+		const float side_angle_error = std::abs(
+			std::abs(segment.angle_rad) - static_cast<float>(M_PI) * 0.5f);
+
+		if (side_angle_error < MAX_ANGLE_ERROR_RAD) {
+
+			if (center.x < 0.0f) {
+
+				// LEFT
+				if (!result.left.has_value() ||
+					segment.perpendicular_distance() <
+						std::abs(result.left->line_c)) {
+
+					result.left = segment;
+				}
+
+			} else {
+
+				// RIGHT
+				if (!result.right.has_value() ||
+					segment.perpendicular_distance() <
+						std::abs(result.right->line_c)) {
+
+					result.right = segment;
+				}
+			}
+
+			continue;
+		}
+		const float front_angle_error = std::abs(segment.angle_rad);
+
+		if (front_angle_error < MAX_ANGLE_ERROR_RAD && center.y > 0.0f) {
+
+			if (!result.front.has_value() ||
+				segment.perpendicular_distance() <
+					std::abs(result.front->line_c)) {
+
+				result.front = segment;
+			}
+		}
 	}
+	return result;
 }
 
 void LidarProcessor::draw_segment(

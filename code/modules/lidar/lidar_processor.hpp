@@ -23,18 +23,18 @@ struct CartesianPoint {
 struct LineSegment {
 	cv::Point2f start;
 	cv::Point2f end;
-	float angle_rad = 0.0f;
+	float angle_rad{0.0f};
 
-	float normal_x = 0.0f;
-	float normal_y = 0.0f;
-	float line_c = 0.0f;
+	float normal_x{0.0f};
+	float normal_y{0.0f};
+	float line_c{0.0f};
 
-	float rms_error_m = 0.0f;
-	
+	float rms_error_m{0.0f};
+
 	float length() const {
 		const float dx = end.x - start.x;
 		const float dy = end.y - start.y;
-		return std::sqrt(dx * dx + dy * dy);
+		return std::hypot(dx, dy);
 	}
 
 	float perpendicular_distance() const { return std::abs(line_c); }
@@ -60,6 +60,7 @@ struct ProcessedLidarData {
 	std::uint64_t timestamp_us{0};
 	std::vector<LineSegment> line_segments;
 	std::vector<ObstacleObject> obstacles;
+	ResolvedWalls walls;
 };
 
 class LidarProcessor {
@@ -102,7 +103,7 @@ class LidarProcessor {
 
 	// clang-format on
 
-	std::vector<ResolvedWalls> classify_track_walls(
+	ResolvedWalls resolve_track_walls(
 		const std::vector<LineSegment> &segments) const;
 
 	// std::vector<ObstacleObject> detect_obstacles(
