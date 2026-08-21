@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <fcntl.h>
 #include <linux/i2c-dev.h>

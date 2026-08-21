@@ -1,5 +1,4 @@
 #include "linux_i2c.hpp"
-#include <cstddef>
 
 bool LinuxI2C::openBus(std::uint8_t bus_num) {
 
@@ -10,6 +9,13 @@ bool LinuxI2C::openBus(std::uint8_t bus_num) {
 	}
 
 	return true;
+}
+
+void LinuxI2C::closeBus() {
+	if (fd_ >= 0) {
+		close(fd_);
+		fd_ = -1;
+	}
 }
 
 sfTkError_t LinuxI2C::ping() {
