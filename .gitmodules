@@ -4,3 +4,9 @@
 [submodule "code/external/rplidar_sdk"]
 	path = code/external/rplidar_sdk
 	url = https://github.com/slamtec/rplidar_sdk
+[submodule "OTOS"]
+	path = code/external/OTOS
+	url = https://github.com/sparkfun/SparkFun_Qwiic_OTOS_Arduino_Library
+[submodule "SparkFunToolkit"]
+	path = code/external/SparkFunToolkit
+	url = https://github.com/sparkfun/SparkFun_Toolkit
