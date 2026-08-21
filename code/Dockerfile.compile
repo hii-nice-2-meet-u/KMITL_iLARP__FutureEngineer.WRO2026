@@ -1,20 +1,27 @@
+# syntax=docker/dockerfile:1.7
+
 ARG BASE_IMAGE=cross-pi
 FROM ${BASE_IMAGE} AS builder
 
-WORKDIR /code
+WORKDIR /src
 
-COPY . /code/
+COPY . /src
 
-ENV BUILD_DIR=/code/build
-ENV INSTALL_DIR=/code/install
+RUN --mount=type=cache,target=/build,sharing=locked \
+	--mount=type=cache,target=/root/.cache/ccache,sharing=locked \
+	cmake \
+	-S /src \
+	-B /build \
+	-G Ninja \
+	-DCMAKE_TOOLCHAIN_FILE="$CROSS_TOOLCHAIN" \
+	-DCMAKE_BUILD_TYPE=Release \
+	-DCMAKE_INSTALL_PREFIX=/install \
+	-DCMAKE_C_COMPILER_LAUNCHER=ccache \
+	-DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+	&& cmake --build /build --parallel \
+	&& rm -rf /install \
+	&& cmake --install /build
 
-RUN mkdir -p $BUILD_DIR \
-    && cd $BUILD_DIR \
-    && cmake -DCMAKE_TOOLCHAIN_FILE=$CROSS_TOOLCHAIN \
-    -DCMAKE_INSTALL_PREFIX=$INSTALL_DIR \
-    .. \
-    && cmake --build $BUILD_DIR -j $(nproc) \
-    && cmake --install $BUILD_DIR
+FROM scratch AS artifact
 
-FROM scratch
-COPY --from=builder /code/install /install
+COPY --from=builder /install /install

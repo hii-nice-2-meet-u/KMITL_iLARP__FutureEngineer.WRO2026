@@ -1,6 +1,7 @@
 /code/build
 /.vscode
-/dist/*
+/code/dist/*
+/code/.cross-build
 
 .clangd
 .clang-format
