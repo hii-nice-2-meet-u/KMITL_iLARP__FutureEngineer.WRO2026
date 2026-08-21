@@ -12,10 +12,10 @@
 
 class LinuxI2C : public sfTkII2C {
   public:
-	LinuxI2C();
+	LinuxI2C() = default;
 	~LinuxI2C();
 
-	bool openBus(std::uint8_t bus_num);
+	bool openBus(const std::uint8_t &bus_num);
 	void closeBus();
 
 	sfTkError_t ping() override;

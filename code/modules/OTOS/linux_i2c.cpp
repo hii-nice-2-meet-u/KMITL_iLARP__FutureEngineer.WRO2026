@@ -1,6 +1,8 @@
 #include "linux_i2c.hpp"
 
-bool LinuxI2C::openBus(std::uint8_t bus_num) {
+LinuxI2C::~LinuxI2C() { closeBus(); }
+
+bool LinuxI2C::openBus(const std::uint8_t &bus_num) {
 
 	fd_ = open(("/dev/i2c-" + std::to_string(bus_num)).c_str(), O_RDWR);
 
