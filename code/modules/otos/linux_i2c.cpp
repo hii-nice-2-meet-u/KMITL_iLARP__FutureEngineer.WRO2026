@@ -58,15 +58,19 @@ sfTkError_t LinuxI2C::writeRegister(
 	return ksfTkErrOk;
 }
 
-sfTkError_t readRegister(
-	uint8_t *devReg, size_t regLength, uint8_t *data, size_t length) {
+sfTkError_t LinuxI2C::readRegister(uint8_t *devReg, size_t regLength,
+	uint8_t *data, size_t numBytes, size_t &readBytes, uint32_t read_delay) {
+	readBytes = 0;
 
-	if (fd_ < 0) return ksfTkErrBusNotInit;
+	if (fd_ < 0) {
+		return ksfTkErrBusNotInit;
+	}
 
-	if (ioctl(fd_, I2C_SLAVE, address()) < 0) return ksfTkErrBusNoResponse;
+	if (ioctl(fd_, I2C_SLAVE, address()) < 0) {
+		return ksfTkErrBusNoResponse;
+	}
 
 	if (devReg != nullptr && regLength > 0) {
-
 		const ssize_t written = write(fd_, devReg, regLength);
 
 		if (written != static_cast<ssize_t>(regLength)) {
@@ -74,9 +78,21 @@ sfTkError_t readRegister(
 		}
 	}
 
-	const ssize_t received = read(fd_, data, length);
+	if (read_delay > 0) {
+		std::this_thread::sleep_for(std::chrono::milliseconds(read_delay));
+	}
 
-	if (received != static_cast<ssize_t>(length)) return ksfTkErrBusUnderRead;
+	const ssize_t received = read(fd_, data, numBytes);
+
+	if (received < 0) {
+		return ksfTkErrFail;
+	}
+
+	readBytes = static_cast<size_t>(received);
+
+	if (readBytes != numBytes) {
+		return ksfTkErrBusUnderRead;
+	}
 
 	return ksfTkErrOk;
 }

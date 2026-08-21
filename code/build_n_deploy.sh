@@ -3,7 +3,7 @@ set -euo pipefail
 
 PI_USER="hii"
 PI_IP="192.168.11.147"
-PI_TARGET_DIR="/home/hii/wro2026_workspace"
+PI_TARGET_DIR="/home/hii/_wro_iLarp"
 
 CROSS_IMAGE="cross-pi"
 
@@ -102,7 +102,8 @@ docker run --rm \
     --user "$(id -u):$(id -g)" \
     -e HOME=/tmp \
     -e CCACHE_DIR=/ccache \
-    -v "$SOURCE_DIR:/src:ro" \
+    -e SOURCE_DIR="$SOURCE_DIR" \
+    -v "$SOURCE_DIR:$SOURCE_DIR:ro" \
     -v "$BUILD_DIR:/build" \
     -v "$INSTALL_DIR:/install" \
     -v "$CCACHE_DIR:/ccache" \
@@ -120,7 +121,7 @@ docker run --rm \
         fi
 
         cmake \
-            -S /src \
+            -S "$SOURCE_DIR" \
             -B /build \
             -G Ninja \
             -DCMAKE_TOOLCHAIN_FILE="$CROSS_TOOLCHAIN" \
