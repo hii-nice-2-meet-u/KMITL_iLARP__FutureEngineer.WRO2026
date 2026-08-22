@@ -17,5 +17,6 @@ add_subdirectory(modules/otos)
 
 add_subdirectory(app/test_camera)
 add_subdirectory(app/test_lidar)
+add_subdirectory(app/test_otos)
 add_subdirectory(app/camera_tuner)
 
