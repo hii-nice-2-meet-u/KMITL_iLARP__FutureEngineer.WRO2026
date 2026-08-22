@@ -3,7 +3,7 @@ set -euo pipefail
 
 PI_USER="hii"
 PI_IP="192.168.11.147"
-PI_TARGET_DIR="/home/hii/_wro_iLarp"
+PI_TARGET_DIR="/home/hii/wro_iLarp"
 
 CROSS_IMAGE="cross-pi"
 
@@ -138,16 +138,19 @@ docker run --rm \
         fi
     '
 
-echo "Deploying to Raspberry Pi 5 ($PI_IP)..."
+echo "Deploying to Raspberry Pi 5 ..."
 
-ssh "$PI_USER@$PI_IP" \
+# ssh "$PI_USER@$PI_IP" \
+#     "mkdir -p '$PI_TARGET_DIR'"
+
+ssh "hii@ilarp.local" \
     "mkdir -p '$PI_TARGET_DIR'"
 
 rsync -av \
     --delete \
     --exclude 'include/' \
     "$INSTALL_DIR/" \
-    "$PI_USER@$PI_IP:$PI_TARGET_DIR/"
+    "hii@ilarp.local:$PI_TARGET_DIR/"
 
 echo
 echo "SUCCESS!"

@@ -74,8 +74,8 @@ CartesianPoint LidarProcessor::polar2cartesian(const LidarPoint &point) const {
 	CartesianPoint result;
 	result.distance_m = point.distance_m;
 	const float rad = point.angle_deg * static_cast<float>(M_PI) / 180.f;
-	result.x_m = point.distance_m * std::sin(rad);
-	result.y_m = point.distance_m * std::cos(rad);
+	result.x_m = point.distance_m * -std::sin(rad);
+	result.y_m = point.distance_m * -std::cos(rad);
 
 	return result;
 }

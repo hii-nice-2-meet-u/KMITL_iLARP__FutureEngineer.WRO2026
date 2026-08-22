@@ -1,18 +1,18 @@
 #pragma once
 
-#include <sfTk/sfDevOTOS.h>
 #include <chrono>
 #include <thread>
 
 #include "linux_i2c.hpp"
+#include <sfTk/sfDevOTOS.h>
 
 namespace otos {
 class OTOS : public sfDevOTOS {
   public:
 	OTOS() = default;
-	~OTOS();
+	~OTOS() = default;
 
-	bool initialize(const std::uint8_t &bus_num);
+	bool initialize(const std::uint8_t &bus_num = 1);
 
   protected:
 	void delayMs(uint32_t ms) override;
