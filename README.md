@@ -3,9 +3,50 @@
 > Autonomous mobile robot developed by **KMITL iLARP** for the
 > **World Robot Olympiad 2026 — Future Engineers** category.
 
+<!-- TODO (team): add the main robot photo to docs/resources/robot_main.jpg -->
 <p align="center">
-  <img src="docs/images/robot_main.jpg" width="700" alt="KMITL iLARP WRO 2026 Robot">
+  <img src="docs/resources/robot_main.jpg" width="700" alt="KMITL iLARP WRO 2026 Robot">
 </p>
+
+---
+
+## **Team**
+
+**KMITL iLARP** — World Robot Olympiad 2026, Future Engineers category.
+
+> ⚠️ **TODO (team):** List team members (name + role). Example:
+>
+> | Name       | Role                        |
+> | ---------- | --------------------------- |
+> | _member 1_ | _software / vision_         |
+> | _member 2_ | _mechanical / CAD_          |
+> | _member 3_ | _electronics / integration_ |
+
+## **Robot Images**
+
+Photos of the robot from every side are in [`v-photos/`](v-photos/), and team
+photos are in [`t-photos/`](t-photos/).
+
+> ⚠️ **TODO (team):** Once the photos are added, embed the six vehicle views
+> here (front / back / left / right / top / bottom).
+
+## **Performance Video**
+
+Autonomous-run videos (one per challenge, ≥30 s each) are linked in
+[`video/video.md`](video/video.md).
+
+> ⚠️ **TODO (team):**  YouTube links.
+
+## **Documentation**
+
+Detailed per-subsystem engineering documentation lives in
+[`docs/`](docs/README.md). Quick links:
+[Vision](docs/vision/README.md) ·
+[LiDAR](docs/lidar/README.md) ·
+[Odometry](docs/odometry/README.md) ·
+[Software Architecture](docs/software/README.md) ·
+[Mechanical](docs/mechanical/README.md) ·
+[Electronics](docs/electronics/README.md).
 
 ---
 
@@ -15,11 +56,11 @@ This project presents the design and implementation of an autonomous mobile robo
 
 The system integrates:
 
-* Computer Vision for object detection and classification
-* LiDAR-based environment perception
-* IMU and odometry for motion stability
-* Sensor fusion for robust decision making
-* Model-based motion control
+- Computer Vision for object detection and classification
+- LiDAR-based environment perception
+- IMU and odometry for motion stability
+- Sensor fusion for robust decision making
+- Model-based motion control
 
 The robot is designed to operate in structured track environments while maintaining robustness under dynamic obstacles and varying lighting conditions.
 
@@ -82,10 +123,10 @@ Bearing Estimation
 
 ### Output Features
 
-* Object class (red / green obstacle)
-* Bounding box
-* Image-space position
-* Relative bearing angle
+- Object class (red / green obstacle)
+- Bounding box
+- Image-space position
+- Relative bearing angle
 
 Documentation: `docs/vision/README.md`
 Source Code: `code/modules/camera`
@@ -114,10 +155,10 @@ Wall Estimation
 
 ### Output Features
 
-* Front distance
-* Left / Right distance
-* Wall angle estimation
-* Track boundary detection
+- Front distance
+- Left / Right distance
+- Wall angle estimation
+- Track boundary detection
 
 Documentation: `docs/lidar/README.md`
 Source Code: `code/modules/lidar`
@@ -128,17 +169,18 @@ Source Code: `code/modules/lidar`
 
 The motion estimation system combines:
 
-* IMU angular velocity
-* Wheel odometry
-* Drift correction logic
+- IMU angular velocity
+- Wheel odometry
+- Drift correction logic
 
 ### Responsibilities
 
-* Heading stabilization
-* Short-term pose estimation
-* Motion smoothing for control layer
+- Heading stabilization
+- Short-term pose estimation
+- Motion smoothing for control layer
 
 Documentation: `docs/odometry/README.md`
+Source Code: `code/modules/otos`
 
 ---
 
@@ -176,7 +218,7 @@ Navigation State Machine
 Path Decision
 ```
 
-Documentation: `docs/navigation/README.md`
+Documentation: `docs/software/README.md` (navigation/state-machine layer — planned, see roadmap)
 
 ---
 
@@ -186,12 +228,12 @@ The motion controller converts navigation outputs into actuator commands.
 
 ### Components
 
-* Steering control (servo-based)
-* Drive motor control
-* Speed regulation
-* Stability correction loop
+- Steering control (servo-based)
+- Drive motor control
+- Speed regulation
+- Stability correction loop
 
-Documentation: `docs/control/README.md`
+Documentation: `docs/software/README.md` (motion-control layer — planned, see roadmap)
 
 ---
 
@@ -201,31 +243,71 @@ The system is implemented in C++17 and structured into modular components.
 
 ```text
 code/
-├── app/
+├── app/                 # test_camera, test_lidar, adjust_HSV, adjust_white, camera_tuner
 ├── modules/
-│   ├── camera/
-│   └── lidar/
-├── external/
+│   ├── camera/          # CameraModule + CameraProcessor
+│   ├── lidar/           # LidarModule + LidarProcessor
+│   └── otos/            # OTOS odometry + LinuxI2C
+├── external/            # git submodules (see .gitmodules)
 │   ├── LCCV/
-│   └── rplidar_sdk/
-├── utils/
-├── Build_n_deploy.sh
+│   ├── rplidar_sdk/
+│   ├── OTOS/
+│   └── SparkFunToolkit/
+├── utils/               # RingBuffer.hpp
+├── build_n_deploy.sh
 ├── CMakeLists.txt
 ├── Dockerfile.compile
 └── Dockerfile.cross
 ```
 
+See [`docs/software/README.md`](docs/software/README.md) for the full
+architecture, threading model, and module/processor split.
+
 ### Core Technologies
 
-| No | Technology  | Purpose                          |
-| -- | ----------- | -------------------------------- |
-| 1  | C++17       | Core system implementation       |
-| 2  | OpenCV      | Vision processing                |
-| 3  | libcamera   | Camera interface                 |
-| 4  | LCCV        | Camera wrapper                   |
-| 5  | RPLIDAR SDK | LiDAR interface                  |
-| 6  | CMake       | Build system                     |
-| 7  | Docker      | Cross-platform build environment |
+| No  | Technology  | Purpose                          |
+| --- | ----------- | -------------------------------- |
+| 1   | C++17       | Core system implementation       |
+| 2   | OpenCV      | Vision processing                |
+| 3   | libcamera   | Camera interface                 |
+| 4   | LCCV        | Camera wrapper                   |
+| 5   | RPLIDAR SDK | LiDAR interface                  |
+| 6   | CMake       | Build system                     |
+| 7   | Docker      | Cross-platform build environment |
+
+---
+
+## **Build & Deploy**
+
+The robot runs on a **Raspberry Pi 5 (arm64)**. The code is cross-compiled on a
+development machine inside Docker and then copied to the Pi — see
+[`docs/software/README.md`](docs/software/README.md) for details.
+
+**1. Clone with submodules** (the SDKs under `code/external/` are git
+submodules):
+
+```bash
+git clone --recurse-submodules <repo-url>
+# or, if already cloned:
+git submodule update --init --recursive
+```
+
+**2. Cross-build and deploy** (edit `PI_USER` / `PI_IP` / `PI_TARGET_DIR` at the
+top of the script first):
+
+```bash
+cd code
+./build_n_deploy.sh          # incremental cross-build + rsync to the Pi
+./build_n_deploy.sh cross    # (re)build the cross-compiler Docker image
+./build_n_deploy.sh clean    # remove build artifacts
+```
+
+The script runs CMake + Ninja (with ccache) inside the `cross-pi` container,
+installs to `code/dist/install`, then `rsync`s the result to the Pi over SSH.
+
+> ⚠️ **TODO (team):** Note the exact OS image / dependencies installed on the Pi
+> (libcamera, OpenCV runtime) and how each test/challenge binary is launched on
+> the robot, so a judge can reproduce a run.
 
 ---
 
@@ -233,10 +315,10 @@ code/
 
 The mechanical system is designed in SolidWorks with focus on:
 
-* Compact chassis design
-* Stable weight distribution
-* Efficient steering geometry
-* Modular sensor mounting
+- Compact chassis design
+- Stable weight distribution
+- Efficient steering geometry
+- Modular sensor mounting
 
 ### Components
 
@@ -253,15 +335,15 @@ Documentation: `docs/mechanical/README.md`
 
 ## **Hardware System**
 
-| No | Component      | Function                      |
-| -- | -------------- | ----------------------------- |
-| 1  | Raspberry Pi   | Main compute unit             |
-| 2  | Camera         | Vision sensing                |
-| 3  | RPLIDAR S3     | Distance and geometry sensing |
-| 4  | IMU            | Orientation tracking          |
-| 5  | Wheel Odometry | Motion estimation             |
-| 6  | Servo Motor    | Steering control              |
-| 7  | DC Motor       | Propulsion                    |
+| No  | Component      | Function                      |
+| --- | -------------- | ----------------------------- |
+| 1   | Raspberry Pi   | Main compute unit             |
+| 2   | Camera         | Vision sensing                |
+| 3   | RPLIDAR S3     | Distance and geometry sensing |
+| 4   | IMU            | Orientation tracking          |
+| 5   | Wheel Odometry | Motion estimation             |
+| 6   | Servo Motor    | Steering control              |
+| 7   | DC Motor       | Propulsion                    |
 
 Documentation: `docs/electronics/README.md`
 
@@ -271,14 +353,14 @@ Documentation: `docs/electronics/README.md`
 
 ### Vision Tools
 
-* adjust_HSV → color calibration
-* adjust_white → white balance tuning
-* camera_tuner → camera parameter tuning
-* test_camera → camera validation
+- adjust_HSV → color calibration
+- adjust_white → white balance tuning
+- camera_tuner → camera parameter tuning
+- test_camera → camera validation
 
 ### LiDAR Tools
 
-* test_lidar → scan validation and debugging
+- test_lidar → scan validation and debugging
 
 Tools Directory: `code/app/`
 
@@ -288,20 +370,19 @@ Tools Directory: `code/app/`
 
 ```text
 KMITL_iLARP__FutureEngineer.WRO2026/
-├── CAD/
+├── CAD/                 # SolidWorks / STEP mechanical models
 ├── code/
-│   ├── app/
-│   ├── modules/
-│   ├── external/
-│   └── utils/
+│   ├── app/             # test & calibration tools
+│   ├── modules/         # camera, lidar, otos (hardware + processing)
+│   ├── external/        # vendored SDKs (git submodules)
+│   └── utils/           # RingBuffer
 ├── docs/
-│   ├── vision/
-│   ├── lidar/
-│   ├── navigation/
-│   ├── control/
-│   ├── mechanical/
-│   ├── electronics/
-│   └── odometry/
+│   ├── vision/          # camera pipeline & detection
+│   ├── lidar/           # scan processing, walls, obstacles
+│   ├── odometry/        # OTOS pose
+│   ├── software/        # architecture, threading, build/deploy, roadmap
+│   ├── mechanical/      # chassis, steering, drivetrain
+│   └── electronics/     # components, wiring, power budget
 ├── README.md
 └── LICENSE
 ```
