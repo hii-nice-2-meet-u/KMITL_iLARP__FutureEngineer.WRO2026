@@ -10,7 +10,8 @@
 #include "lidar_processor.hpp"
 
 int main() {
-	lidar::LidarModule lidar;
+	// lidar::LidarModule lidar;
+	lidar::LidarModule lidar("/dev/ttyAMA0", 1000000);
 	lidar::LidarProcessor lidar_processor;
 
 	if (!lidar.initialize()) {

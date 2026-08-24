@@ -60,7 +60,6 @@ bool LidarModule::start() {
 		return true;
 	}
 
-	lidar_driver_->setMotorSpeed(DEFAULT_MOTOR_SPEED);
 	sl_result result = lidar_driver_->startScan(0, 1);
 	if (SL_IS_FAIL(result)) {
 		std::cerr << "[LidarModule] Failed to start scan." << std::endl;
@@ -93,8 +92,7 @@ void LidarModule::stop() {
 }
 
 void LidarModule::shutdown() {
-	if (running_)
-		stop();
+	if (running_) stop();
 
 	if (lidar_driver_) {
 		lidar_driver_->disconnect();
@@ -171,6 +169,8 @@ void LidarModule::processScan(
 
 void LidarModule::scan_loop() {
 	std::uint8_t fail_count = 0;
+	constexpr sl_u16 TARGET_RPM = 1200; // 20 Hz
+	lidar_driver_->setMotorSpeed(TARGET_RPM);
 	while (running_) {
 		sl_lidar_response_measurement_node_hq_t nodes[8192];
 		size_t count = sizeof(nodes) / sizeof(nodes[0]);

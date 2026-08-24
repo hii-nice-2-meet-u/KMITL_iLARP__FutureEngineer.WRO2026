@@ -71,7 +71,11 @@ struct ProcessedLidarData {
 
 class LidarProcessor {
   public:
-	ProcessedLidarData process(const TimedLidarData &data) const;
+	ProcessedLidarData process(const TimedLidarData &data,
+		std::size_t min_segment_point = 5, float max_line_error_m = 0.035f,
+		float max_point_gap_m = 0.11f, float max_angle_diff = 5.0f,
+		float max_collinear_error_m = 0.02f,
+		float max_segment_gap_m = 0.05f) const;
 
 	void draw_segment(
 		cv::Mat &img, const LineSegment &segment, float scale_px_per_m) const;

@@ -1,11 +1,22 @@
 #include "lidar_processor.hpp"
 #include <cmath>
+#include <cstddef>
 #include <iostream>
 #include <opencv2/core/types.hpp>
 
 namespace lidar {
 
-ProcessedLidarData LidarProcessor::process(const TimedLidarData &data) const {
+// clang-format off
+ProcessedLidarData LidarProcessor::process(
+	const TimedLidarData &data,
+	std::size_t min_segment_point,
+	float max_line_error_m,
+	float max_point_gap_m,
+	float max_angle_diff,
+	float max_collinear_error_m,
+	float max_segment_gap_m) const {
+
+	// clang-format on
 
 	ProcessedLidarData result;
 	result.timestamp_us = data.timestamp_us;
@@ -18,12 +29,8 @@ ProcessedLidarData LidarProcessor::process(const TimedLidarData &data) const {
 	}
 	if (points.empty()) return result;
 
-	constexpr std::size_t MIN_SEGMENT_POINTS = 5;
-	constexpr float MAX_LINE_ERROR_M = 0.035f;
-	constexpr float MAX_POINT_GAP_M = 0.11f;
-
 	const auto point_segments = split_line_segments(
-		points, MAX_LINE_ERROR_M, MAX_POINT_GAP_M, MIN_SEGMENT_POINTS);
+		points, max_line_error_m, max_point_gap_m, min_segment_point);
 
 	std::vector<LineSegment> segments;
 	segments.reserve(point_segments.size());
@@ -33,19 +40,16 @@ ProcessedLidarData LidarProcessor::process(const TimedLidarData &data) const {
 
 		if (!line_segment.has_value()) continue;
 
-		if (line_segment->rms_error_m > MAX_LINE_ERROR_M) continue;
+		if (line_segment->rms_error_m > max_line_error_m) continue;
 
 		segments.push_back(*line_segment);
 	}
 
-	constexpr float MAX_ANGLE_DIFF_RAD =
-		5.0f * static_cast<float>(M_PI) / 180.0f;
-
-	constexpr float MAX_COLLINEAR_ERROR_M = 0.02f;
-	constexpr float MAX_SEGMENT_GAP_M = 0.05f;
+	float MAX_ANGLE_DIFF_RAD =
+		max_angle_diff * static_cast<float>(M_PI) / 180.0f;
 
 	merge_aligned_segments(
-		segments, MAX_ANGLE_DIFF_RAD, MAX_COLLINEAR_ERROR_M, MAX_SEGMENT_GAP_M);
+		segments, MAX_ANGLE_DIFF_RAD, max_collinear_error_m, max_segment_gap_m);
 
 	const ResolvedWalls walls = resolve_track_walls(segments);
 
