@@ -142,6 +142,7 @@ class LidarProcessor {
 
 	ResolvedWalls resolve_track_walls(
 		const std::vector<LineSegment> &segments) const;
+
 	TrackWalls resolve_inner_outer(
 		const ResolvedWalls &walls, DrivingDirection direction);
 
@@ -156,6 +157,10 @@ class LidarProcessor {
 		const ResolvedWalls &walls) const;
 
 	std::optional<CornerEstimate> find_corner(const ResolvedWalls &walls) const;
+
+	std::optional<LineSegment> find_parking_wall(
+		const std::vector<LineSegment> &segments,
+		const ResolvedWalls &walls) const;
 };
 
 } // namespace lidar

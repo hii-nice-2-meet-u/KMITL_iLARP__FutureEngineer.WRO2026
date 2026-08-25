@@ -134,9 +134,10 @@ int main() {
 		// -----------------------------
 
 		for (const auto &obstacle : processed.obstacles) {
-
-			cv::line(debug_map, world_to_pixel(obstacle.start),
-				world_to_pixel(obstacle.end), cv::Scalar(0, 0, 255), 4,
+			const auto obj_start = obstacle.start();
+			const auto obj_end = obstacle.end();
+			cv::line(debug_map, world_to_pixel(obj_start),
+				world_to_pixel(obj_end), cv::Scalar(0, 0, 255), 4,
 				cv::LINE_AA);
 
 			auto const &center = obstacle.center;
@@ -146,9 +147,9 @@ int main() {
 				cv::Scalar(0, 255, 255), -1);
 
 			// Distance + bearing
-			auto const &distance_m = obstacle.distance_m;
+			auto const &distance_m = obstacle.distance_m();
 
-			auto const &bearing_rad = obstacle.bearing_rad;
+			auto const &bearing_rad = obstacle.bearing_rad();
 
 			const float bearing_deg =
 				bearing_rad * 180.0f / static_cast<float>(M_PI);
