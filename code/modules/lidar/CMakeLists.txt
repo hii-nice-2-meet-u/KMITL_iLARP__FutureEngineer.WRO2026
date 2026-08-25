@@ -28,6 +28,7 @@ target_include_directories(lidar_processor
         ${CMAKE_CURRENT_SOURCE_DIR}
 		${OpenCV_INCLUDE_DIRS}
         ${CMAKE_SOURCE_DIR}/utils
+        ${CMAKE_SOURCE_DIR}/common
 )
 
 target_link_libraries(lidar_processor

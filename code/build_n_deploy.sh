@@ -143,14 +143,14 @@ echo "Deploying to Raspberry Pi 5 ..."
 # ssh "$PI_USER@$PI_IP" \
 #     "mkdir -p '$PI_TARGET_DIR'"
 
-ssh "hii@ilarp.local" \
+ssh "hii@hii.local" \
     "mkdir -p '$PI_TARGET_DIR'"
 
 rsync -av \
     --delete \
     --exclude 'include/' \
     "$INSTALL_DIR/" \
-    "hii@ilarp.local:$PI_TARGET_DIR/"
+    "hii@hii.local:$PI_TARGET_DIR/"
 
 echo
 echo "SUCCESS!"

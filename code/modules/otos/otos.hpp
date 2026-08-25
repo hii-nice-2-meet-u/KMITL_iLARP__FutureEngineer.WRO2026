@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <thread>
+#include <iostream>
 
 #include "linux_i2c.hpp"
 #include <sfTk/sfDevOTOS.h>

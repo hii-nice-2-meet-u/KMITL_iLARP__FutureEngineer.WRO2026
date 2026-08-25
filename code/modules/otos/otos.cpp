@@ -10,7 +10,11 @@ bool OTOS::initialize(const std::uint8_t &bus_num) {
 
 	bus_.setAddress(kDefaultAddress);
 
-	if (sfDevOTOS::begin(&bus_) != ksfTkErrOk) {
+	const sfTkError_t err = sfDevOTOS::begin(&bus_);
+
+	std::cerr << "[OTOS] begin error = " << err << '\n';
+
+	if (err != ksfTkErrOk) {
 		return false;
 	}
 
