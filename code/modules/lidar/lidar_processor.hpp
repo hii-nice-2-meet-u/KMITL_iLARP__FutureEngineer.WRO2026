@@ -7,6 +7,7 @@
 #include <optional>
 #include <vector>
 
+#include "direction.hpp"
 #include "lidar_struct.hpp"
 #include <opencv2/core.hpp>
 #include <opencv2/core/types.hpp>
@@ -46,7 +47,11 @@ struct ResolvedWalls {
 	std::optional<LineSegment> front;
 };
 
-enum class DrivingDirection { CLOCKWISE, COUNTER_CLOCKWISE };
+struct CornerEstimate {
+	cv::Point2f position;
+	float distance_m{0.0f};
+	TurnDirection turn;
+};
 
 struct TrackWalls {
 	std::optional<LineSegment> inner;
@@ -64,7 +69,12 @@ struct ProcessedLidarData {
 	std::uint64_t timestamp_us{0};
 
 	std::vector<LineSegment> line_segments;
+
 	ResolvedWalls walls;
+
+	std::optional<CornerEstimate> corner;
+
+	std::optional<LineSegment> parking_wall;
 
 	std::vector<LineSegment> obstacles;
 };
@@ -127,6 +137,8 @@ class LidarProcessor {
 	std::vector<LineSegment> detect_obstacle_segments(
 		const std::vector<LineSegment> &segments,
 		const ResolvedWalls &walls) const;
+
+	std::optional<CornerEstimate> find_corner(const ResolvedWalls &walls) const;
 };
 
 } // namespace lidar
