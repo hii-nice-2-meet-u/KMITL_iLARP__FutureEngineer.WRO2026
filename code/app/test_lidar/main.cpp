@@ -139,16 +139,16 @@ int main() {
 				world_to_pixel(obstacle.end), cv::Scalar(0, 0, 255), 4,
 				cv::LINE_AA);
 
-			const cv::Point2f center = (obstacle.start + obstacle.end) * 0.5f;
+			auto const &center = obstacle.center;
 
 			// Obstacle center
 			cv::circle(debug_map, world_to_pixel(center), 4,
 				cv::Scalar(0, 255, 255), -1);
 
 			// Distance + bearing
-			const float distance_m = std::hypot(center.x, center.y);
+			auto const &distance_m = obstacle.distance_m;
 
-			const float bearing_rad = std::atan2(center.x, center.y);
+			auto const &bearing_rad = obstacle.bearing_rad;
 
 			const float bearing_deg =
 				bearing_rad * 180.0f / static_cast<float>(M_PI);

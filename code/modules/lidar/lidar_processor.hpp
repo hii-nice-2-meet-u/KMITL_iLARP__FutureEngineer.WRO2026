@@ -61,8 +61,25 @@ struct TrackWalls {
 
 struct ObstacleObject {
 	cv::Point2f center;
-	float distance_m = 0.0f;
-	float width_m = 0.0f;
+
+	float width_m{0.0f};
+	float angle_rad{0.0f};
+
+	float distance_m() const { return std::hypot(center.x, center.y); }
+
+	float bearing_rad() const { return std::atan2(center.x, center.y); }
+
+	cv::Point2f start() const {
+		const cv::Point2f dir{std::cos(angle_rad), std::sin(angle_rad)};
+
+		return center - dir * (width_m * 0.5f);
+	}
+
+	cv::Point2f end() const {
+		const cv::Point2f dir{std::cos(angle_rad), std::sin(angle_rad)};
+
+		return center + dir * (width_m * 0.5f);
+	}
 };
 
 struct ProcessedLidarData {
@@ -76,7 +93,7 @@ struct ProcessedLidarData {
 
 	std::optional<LineSegment> parking_wall;
 
-	std::vector<LineSegment> obstacles;
+	std::vector<ObstacleObject> obstacles;
 };
 
 class LidarProcessor {
@@ -134,7 +151,7 @@ class LidarProcessor {
 	bool is_wall_fragment(const LineSegment &segment,
 		const std::optional<LineSegment> &wall) const;
 
-	std::vector<LineSegment> detect_obstacle_segments(
+	std::vector<ObstacleObject> detect_obstacle_segments(
 		const std::vector<LineSegment> &segments,
 		const ResolvedWalls &walls) const;
 
