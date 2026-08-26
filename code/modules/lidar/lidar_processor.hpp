@@ -47,12 +47,6 @@ struct ResolvedWalls {
 	std::optional<LineSegment> front;
 };
 
-struct CornerEstimate {
-	cv::Point2f position;
-	float distance_m{0.0f};
-	TurnDirection turn;
-};
-
 struct TrackWalls {
 	std::optional<LineSegment> inner;
 	std::optional<LineSegment> outer;
@@ -89,8 +83,6 @@ struct ProcessedLidarData {
 
 	ResolvedWalls walls;
 
-	std::optional<CornerEstimate> corner;
-
 	std::optional<LineSegment> parking_wall;
 
 	std::vector<ObstacleObject> obstacles;
@@ -100,8 +92,8 @@ class LidarProcessor {
   public:
 	ProcessedLidarData process(const TimedLidarData &data,
 		std::size_t min_segment_point = 5, float max_line_error_m = 0.035f,
-		float max_point_gap_m = 0.11f, float max_angle_diff = 5.0f,
-		float max_collinear_error_m = 0.02f,
+		float max_point_gap_m = 0.10f, float max_angle_diff = 3.0f,
+		float max_collinear_error_m = 0.03f,
 		float max_segment_gap_m = 0.05f) const;
 
 	void draw_segment(
@@ -152,11 +144,9 @@ class LidarProcessor {
 	bool is_wall_fragment(const LineSegment &segment,
 		const std::optional<LineSegment> &wall) const;
 
-	std::vector<ObstacleObject> detect_obstacle_segments(
-		const std::vector<LineSegment> &segments,
+	std::vector<ObstacleObject> detect_obstacles(
+		const std::vector<CartesianPoint> &points,
 		const ResolvedWalls &walls) const;
-
-	std::optional<CornerEstimate> find_corner(const ResolvedWalls &walls) const;
 
 	std::optional<LineSegment> find_parking_wall(
 		const std::vector<LineSegment> &segments,

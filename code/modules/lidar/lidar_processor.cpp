@@ -53,17 +53,13 @@ ProcessedLidarData LidarProcessor::process(
 
 	const ResolvedWalls walls = resolve_track_walls(segments);
 
-	const auto obstacle_segments = detect_obstacle_segments(segments, walls);
-
-	const auto corner = find_corner(walls);
+	const auto obstacles = detect_obstacles(points, walls);
 
 	const auto parking = find_parking_wall(segments, walls);
 
 	result.walls = walls;
 
-	result.obstacles = obstacle_segments;
-
-	result.corner = corner;
+	result.obstacles = obstacles;
 
 	result.line_segments = std::move(segments);
 
@@ -71,12 +67,14 @@ ProcessedLidarData LidarProcessor::process(
 }
 
 bool LidarProcessor::is_valid_point(const LidarPoint &point) const {
-	if (point.quality < 50) return false;
+	if (point.quality < 1) return false;
 	if (point.distance_m < 0.01f) return false;
-	// if (point.distance_m <= 0.0f)
-	// 	return false;
 
-	// if (point.angle_deg) return false;  // ซักอย่าง ลืม
+	// const bool front_region =
+	// 	point.angle_deg >= 75.0f && point.angle_deg <= 285.0f;
+
+	// if (!front_region && point.distance_m > 0.70f) return false;
+
 	return true;
 }
 
@@ -258,37 +256,35 @@ void LidarProcessor::merge_aligned_segments(std::vector<LineSegment> &segments,
 			}
 
 			// merge
-			std::vector<cv::Point2f> endpoints = {
-				a.start, a.end, b.start, b.end};
-
 			const cv::Point2f dir(std::cos(a.angle_rad), std::sin(a.angle_rad));
 
 			auto projection = [&](const cv::Point2f &p) {
 				return p.x * dir.x + p.y * dir.y;
 			};
 
-			cv::Point2f new_start = endpoints[0];
-			cv::Point2f new_end = endpoints[0];
+			const cv::Point2f origin = a.start;
 
-			float min_proj = projection(endpoints[0]);
-			float max_proj = projection(endpoints[0]);
+			float min_proj = 0.0f;
+			float max_proj = (a.end - origin).dot(dir);
 
-			for (const auto &p : endpoints) {
-				float proj = projection(p);
-
-				if (proj < min_proj) {
-					min_proj = proj;
-					new_start = p;
-				}
-
-				if (proj > max_proj) {
-					max_proj = proj;
-					new_end = p;
-				}
+			if (min_proj > max_proj) {
+				std::swap(min_proj, max_proj);
 			}
 
-			a.start = new_start;
-			a.end = new_end;
+			auto extend_projection = [&](const cv::Point2f &p) {
+				const float t = (p - origin).dot(dir);
+
+				min_proj = std::min(min_proj, t);
+
+				max_proj = std::max(max_proj, t);
+			};
+
+			extend_projection(b.start);
+			extend_projection(b.end);
+
+			a.start = origin + dir * min_proj;
+
+			a.end = origin + dir * max_proj;
 			removed[j] = true;
 		}
 	}
@@ -434,24 +430,6 @@ ResolvedWalls LidarProcessor::resolve_track_walls(
 	return result;
 }
 
-TrackWalls LidarProcessor::resolve_inner_outer(
-	const ResolvedWalls &walls, DrivingDirection direction) {
-
-	TrackWalls result;
-
-	result.front = walls.front;
-
-	if (direction == DrivingDirection::CLOCKWISE) {
-		result.inner = walls.right;
-		result.outer = walls.left;
-	} else {
-		result.inner = walls.left;
-		result.outer = walls.right;
-	}
-
-	return result;
-}
-
 bool LidarProcessor::is_same_segment(
 	const LineSegment &a, const std::optional<LineSegment> &b) const {
 
@@ -516,220 +494,192 @@ bool LidarProcessor::is_wall_fragment(
 	return angle_diff < MAX_ANGLE_DIFF_RAD;
 }
 
-std::vector<ObstacleObject> LidarProcessor::detect_obstacle_segments(
-	const std::vector<LineSegment> &segments,
+std::vector<ObstacleObject> LidarProcessor::detect_obstacles(
+	const std::vector<CartesianPoint> &points,
 	const ResolvedWalls &walls) const {
 
 	std::vector<ObstacleObject> obstacles;
-	obstacles.reserve(segments.size());
 
-	constexpr float MIN_OBSTACLE_SEGMENT_LENGTH_M = 0.028f;
-	constexpr float MAX_OBSTACLE_SEGMENT_LENGTH_M = 0.08f;
+	constexpr float WALL_REJECT_DISTANCE_M = 0.05f;
+	constexpr float WALL_EXTENSION_M = 0.08f;
 
-	constexpr float SAME_OBSTACLE_DISTANCE_M = 0.08f;
-	constexpr float SAME_OBSTACLE_DISTANCE_SQ =
-		SAME_OBSTACLE_DISTANCE_M * SAME_OBSTACLE_DISTANCE_M;
+	constexpr float CLUSTER_GAP_M = 0.07f;
 
-	for (const auto &segment : segments) {
+	constexpr std::size_t MIN_CLUSTER_POINTS = 3;
 
-		if (is_same_segment(segment, walls.left) ||
-			is_same_segment(segment, walls.right) ||
-			is_same_segment(segment, walls.front)) {
+	constexpr float MIN_OBSTACLE_WIDTH_M = 0.035f;
+	constexpr float MAX_OBSTACLE_WIDTH_M = 0.07f;
 
+	constexpr float MIN_FORWARD_M = 0.03f;
+
+	std::vector<CartesianPoint> candidates;
+	candidates.reserve(points.size());
+
+	auto point_near_wall = [&](const CartesianPoint &point,
+							   const std::optional<LineSegment> &wall) {
+		if (!wall.has_value()) {
+			return false;
+		}
+
+		const cv::Point2f p{point.x_m, point.y_m};
+
+		const cv::Point2f ab = wall->end - wall->start;
+
+		const float length_sq = ab.dot(ab);
+
+		if (length_sq < 1e-8f) {
+			return false;
+		}
+
+		const float length = std::sqrt(length_sq);
+
+		// Projection along the finite wall.
+		float t = (p - wall->start).dot(ab) / length_sq;
+
+		// Allow a small extension beyond both endpoints.
+		const float extension_t = WALL_EXTENSION_M / length;
+
+		if (t < -extension_t || t > 1.0f + extension_t) {
+
+			return false;
+		}
+
+		// Clamp only for closest-point calculation.
+		t = std::clamp(t, 0.0f, 1.0f);
+
+		const cv::Point2f closest = wall->start + ab * t;
+
+		const float distance = cv::norm(p - closest);
+
+		return distance < WALL_REJECT_DISTANCE_M;
+	};
+
+	for (const auto &point : points) {
+
+		if (point.y_m <= MIN_FORWARD_M) {
 			continue;
 		}
 
-		if (is_wall_fragment(segment, walls.left) ||
-			is_wall_fragment(segment, walls.right) ||
-			is_wall_fragment(segment, walls.front)) {
-
+		if (point_near_wall(point, walls.left)) {
 			continue;
 		}
 
-		const float length = segment.length();
-
-		if (length < MIN_OBSTACLE_SEGMENT_LENGTH_M) {
+		if (point_near_wall(point, walls.right)) {
 			continue;
 		}
 
-		if (length > MAX_OBSTACLE_SEGMENT_LENGTH_M) {
+		if (point_near_wall(point, walls.front)) {
 			continue;
 		}
 
-		const cv::Point2f center = (segment.start + segment.end) * 0.5f;
+		candidates.push_back(point);
+	}
 
-		if (center.y <= 0.0f) {
-			continue;
+	if (candidates.empty()) {
+		return obstacles;
+	}
+
+	std::vector<CartesianPoint> cluster;
+	cluster.reserve(32);
+
+	auto finish_cluster = [&]() {
+		if (cluster.size() < MIN_CLUSTER_POINTS) {
+
+			cluster.clear();
+			return;
 		}
 
-		bool merged = false;
+		cv::Point2f center{0.0f, 0.0f};
 
-		for (auto &existing : obstacles) {
+		for (const auto &point : cluster) {
 
-			const float dx = center.x - existing.center.x;
-			const float dy = center.y - existing.center.y;
-
-			const float distance_sq = dx * dx + dy * dy;
-
-			if (distance_sq > SAME_OBSTACLE_DISTANCE_SQ) continue;
-
-			const cv::Point2f dir{
-				std::cos(existing.angle_rad), std::sin(existing.angle_rad)};
-
-			const cv::Point2f origin = existing.center;
-
-			float min_projection = -existing.width_m * 0.5f;
-			float max_projection = existing.width_m * 0.5f;
-
-			auto projection = [&](const cv::Point2f &point) {
-				const cv::Point2f relative = point - origin;
-
-				return relative.x * dir.x + relative.y * dir.y;
-			};
-
-			const float start_projection = projection(segment.start);
-
-			const float end_projection = projection(segment.end);
-
-			min_projection = std::min(
-				min_projection, std::min(start_projection, end_projection));
-
-			max_projection = std::max(
-				max_projection, std::max(start_projection, end_projection));
-
-			// New obstacle center along the merged extent
-			const float center_projection =
-				(min_projection + max_projection) * 0.5f;
-
-			existing.center = origin + dir * center_projection;
-
-			existing.width_m = max_projection - min_projection;
-
-			merged = true;
-			break;
+			center.x += point.x_m;
+			center.y += point.y_m;
 		}
 
-		if (merged) continue;
+		const float count = static_cast<float>(cluster.size());
+
+		center.x /= count;
+		center.y /= count;
+
+		float max_distance_sq = 0.0f;
+
+		cv::Point2f extent_start{cluster.front().x_m, cluster.front().y_m};
+
+		cv::Point2f extent_end = extent_start;
+
+		for (std::size_t i = 0; i < cluster.size(); ++i) {
+
+			const cv::Point2f a{cluster[i].x_m, cluster[i].y_m};
+
+			for (std::size_t j = i + 1; j < cluster.size(); ++j) {
+
+				const cv::Point2f b{cluster[j].x_m, cluster[j].y_m};
+
+				const cv::Point2f diff = b - a;
+
+				const float distance_sq = diff.dot(diff);
+
+				if (distance_sq > max_distance_sq) {
+
+					max_distance_sq = distance_sq;
+
+					extent_start = a;
+					extent_end = b;
+				}
+			}
+		}
+
+		const float width = std::sqrt(max_distance_sq);
+
+		if (width < MIN_OBSTACLE_WIDTH_M || width > MAX_OBSTACLE_WIDTH_M) {
+
+			cluster.clear();
+			return;
+		}
 
 		ObstacleObject obstacle;
 
 		obstacle.center = center;
-		obstacle.width_m = segment.length();
-		obstacle.angle_rad = segment.angle_rad;
+
+		obstacle.width_m = width;
+
+		obstacle.angle_rad = std::atan2(
+			extent_end.y - extent_start.y, extent_end.x - extent_start.x);
 
 		obstacles.push_back(obstacle);
-	}
-	return obstacles;
-}
 
-std::optional<CornerEstimate> LidarProcessor::find_corner(
-	const ResolvedWalls &walls) const {
-
-	if (!walls.front.has_value()) {
-		return std::nullopt;
-	}
-
-	constexpr float MAX_ANGLE_ERROR_RAD =
-		20.0f * static_cast<float>(M_PI) / 180.0f;
-
-	constexpr float SEGMENT_EXTENSION_M = 0.15f;
-	constexpr float MIN_FORWARD_DISTANCE_M = 0.05f;
-
-	const LineSegment &front = *walls.front;
-
-	std::optional<CornerEstimate> best_corner;
-
-	auto check_side = [&](const std::optional<LineSegment> &side,
-						  TurnDirection turn) {
-		if (!side.has_value()) {
-			return;
-		}
-
-		// Must be roughly perpendicular
-		float angle_diff = std::abs(front.angle_rad - side->angle_rad);
-
-		angle_diff = std::fmod(angle_diff, static_cast<float>(M_PI));
-
-		if (angle_diff > static_cast<float>(M_PI) * 0.5f) {
-			angle_diff = static_cast<float>(M_PI) - angle_diff;
-		}
-
-		const float perpendicular_error =
-			std::abs(angle_diff - static_cast<float>(M_PI) * 0.5f);
-
-		if (perpendicular_error > MAX_ANGLE_ERROR_RAD) {
-			return;
-		}
-
-		// Find intersection from
-		// nx*x + ny*y + c = 0
-		const float det =
-			front.normal_x * side->normal_y - side->normal_x * front.normal_y;
-
-		if (std::abs(det) < 1e-6f) {
-			return;
-		}
-
-		const float x =
-			(front.normal_y * side->line_c - front.line_c * side->normal_y) /
-			det;
-
-		const float y =
-			(front.line_c * side->normal_x - front.normal_x * side->line_c) /
-			det;
-
-		const cv::Point2f intersection{x, y};
-
-		// Corner must be in front of robot
-		if (intersection.y < MIN_FORWARD_DISTANCE_M) {
-			return;
-		}
-
-		// Check intersection is near actual segment extent
-		auto is_near_segment = [&](const LineSegment &segment) {
-			const cv::Point2f dir = segment.end - segment.start;
-
-			const float length_sq = dir.dot(dir);
-
-			if (length_sq < 1e-8f) {
-				return false;
-			}
-
-			const float length = std::sqrt(length_sq);
-
-			const cv::Point2f relative = intersection - segment.start;
-
-			const float t = relative.dot(dir) / length_sq;
-
-			const float extension_t = SEGMENT_EXTENSION_M / length;
-
-			return t >= -extension_t && t <= 1.0f + extension_t;
-		};
-
-		if (!is_near_segment(front) || !is_near_segment(*side)) {
-			return;
-		}
-
-		// Robot -> corner distance
-		CornerEstimate corner;
-
-		corner.position = intersection;
-		corner.distance_m = std::hypot(intersection.x, intersection.y);
-
-		corner.turn = turn;
-
-		// nearest valid corner wins
-		if (!best_corner.has_value() ||
-			corner.distance_m < best_corner->distance_m) {
-
-			best_corner = corner;
-		}
+		cluster.clear();
 	};
 
-	check_side(walls.left, TurnDirection::LEFT);
-	check_side(walls.right, TurnDirection::RIGHT);
+	for (const auto &point : candidates) {
 
-	return best_corner;
+		if (cluster.empty()) {
+
+			cluster.push_back(point);
+			continue;
+		}
+
+		const auto &previous = cluster.back();
+
+		const float dx = point.x_m - previous.x_m;
+
+		const float dy = point.y_m - previous.y_m;
+
+		const float distance_sq = dx * dx + dy * dy;
+
+		if (distance_sq > CLUSTER_GAP_M * CLUSTER_GAP_M) {
+
+			finish_cluster();
+		}
+
+		cluster.push_back(point);
+	}
+
+	// Last cluster
+	finish_cluster();
+
+	return obstacles;
 }
 
 std::optional<LineSegment> LidarProcessor::find_parking_wall(
