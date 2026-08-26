@@ -2,6 +2,7 @@
 /.vscode
 /code/dist/*
 /code/.cross-build
+/code/.ccache-cross
 
 .clangd
 .clang-format

@@ -14,9 +14,11 @@ endif()
 add_subdirectory(modules/lidar)
 add_subdirectory(modules/camera)
 add_subdirectory(modules/otos)
+add_subdirectory(modules/navigation)
 
 add_subdirectory(app/test_camera)
 add_subdirectory(app/test_lidar)
 add_subdirectory(app/test_otos)
+add_subdirectory(app/test_navi)
 add_subdirectory(app/camera_tuner)
 
