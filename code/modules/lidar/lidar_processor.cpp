@@ -9,6 +9,7 @@ namespace lidar {
 // clang-format off
 ProcessedLidarData LidarProcessor::process(
 	const TimedLidarData &data,
+	float heading_error_rad,
 	std::size_t min_segment_point,
 	float max_line_error_m,
 	float max_point_gap_m,
@@ -16,52 +17,98 @@ ProcessedLidarData LidarProcessor::process(
 	float max_collinear_error_m,
 	float max_segment_gap_m) const {
 
-	// clang-format on
-
 	ProcessedLidarData result;
 	result.timestamp_us = data.timestamp_us;
+
 	std::vector<CartesianPoint> points;
+	points.reserve(data.points.size());
 
+	// Raw LiDAR -> Cartesian
 	for (const auto &point : data.points) {
-		if (!is_valid_point(point)) continue;
 
-		points.push_back(polar2cartesian(point));
+		if (!is_valid_point(point)) {
+			continue;
+		}
+
+		points.push_back(
+			polar2cartesian(point));
 	}
-	if (points.empty()) return result;
 
-	const auto point_segments = split_line_segments(
-		points, max_line_error_m, max_point_gap_m, min_segment_point);
+	if (points.empty()) {
+		return result;
+	}
 
+	// Split points into line groups
+	const auto point_segments =
+		split_line_segments(
+			points,
+			max_line_error_m,
+			max_point_gap_m,
+			min_segment_point);
+
+	// Orthogonal line fitting
 	std::vector<LineSegment> segments;
-	segments.reserve(point_segments.size());
 
-	for (const auto &point_segment : point_segments) {
-		const auto line_segment = fit_line_segment(point_segment);
+	segments.reserve(
+		point_segments.size());
 
-		if (!line_segment.has_value()) continue;
+	for (const auto &point_segment :
+		point_segments) {
 
-		if (line_segment->rms_error_m > max_line_error_m) continue;
+		const auto line_segment =
+			fit_line_segment(
+				point_segment);
 
-		segments.push_back(*line_segment);
+		if (!line_segment.has_value()) {
+			continue;
+		}
+
+		if (line_segment->rms_error_m >
+			max_line_error_m) {
+
+			continue;
+		}
+
+		segments.push_back(
+			*line_segment);
 	}
 
-	float MAX_ANGLE_DIFF_RAD =
-		max_angle_diff * static_cast<float>(M_PI) / 180.0f;
+	// Merge aligned segments
+
+	const float max_angle_diff_rad =
+		max_angle_diff *
+		static_cast<float>(M_PI) /
+		180.0f;
 
 	merge_aligned_segments(
-		segments, MAX_ANGLE_DIFF_RAD, max_collinear_error_m, max_segment_gap_m);
+		segments,
+		max_angle_diff_rad,
+		max_collinear_error_m,
+		max_segment_gap_m);
 
-	const ResolvedWalls walls = resolve_track_walls(segments);
+	// Resolve walls
+	const ResolvedWalls walls =
+		resolve_track_walls(
+			segments,
+			heading_error_rad);
 
-	const auto obstacles = detect_obstacles(points, walls);
+	// Obstacle detection
+	const auto obstacles =
+		detect_obstacles(
+			points,
+			walls);
 
-	const auto parking = find_parking_wall(segments, walls);
+	// 7. Parking wall
+	const auto parking =
+		find_parking_wall(
+			segments,
+			walls);
 
 	result.walls = walls;
-
 	result.obstacles = obstacles;
-
-	result.line_segments = std::move(segments);
+	result.parking_wall = parking;
+	result.line_segments =
+		std::move(segments);
 
 	return result;
 }
@@ -373,7 +420,7 @@ std::optional<LineSegment> LidarProcessor::fit_line_segment(
 }
 
 ResolvedWalls LidarProcessor::resolve_track_walls(
-	const std::vector<LineSegment> &segments) const {
+	const std::vector<LineSegment> &segments, float heading_error_rad) const {
 
 	ResolvedWalls result;
 
@@ -382,32 +429,51 @@ ResolvedWalls LidarProcessor::resolve_track_walls(
 	constexpr float MAX_ANGLE_ERROR_RAD =
 		15.0f * static_cast<float>(M_PI) / 180.0f;
 
+	auto normalize_line_angle = [](float angle) {
+		while (angle >= static_cast<float>(M_PI) * 0.5f) {
+
+			angle -= static_cast<float>(M_PI);
+		}
+
+		while (angle < -static_cast<float>(M_PI) * 0.5f) {
+
+			angle += static_cast<float>(M_PI);
+		}
+
+		return angle;
+	};
+
 	for (const auto &segment : segments) {
 
-		if (segment.length() < MIN_WALL_LENGTH_M) continue;
+		if (segment.length() < MIN_WALL_LENGTH_M) {
+
+			continue;
+		}
 
 		const cv::Point2f center = (segment.start + segment.end) * 0.5f;
+
+		const float corrected_angle =
+			normalize_line_angle(segment.angle_rad + heading_error_rad);
+
 		const float side_angle_error = std::abs(
-			std::abs(segment.angle_rad) - static_cast<float>(M_PI) * 0.5f);
+			std::abs(corrected_angle) - static_cast<float>(M_PI) * 0.5f);
 
 		if (side_angle_error < MAX_ANGLE_ERROR_RAD) {
 
 			if (center.x < 0.0f) {
 
-				// LEFT
-				if (!result.left.has_value() ||
+				if (!result.left ||
 					segment.perpendicular_distance() <
-						std::abs(result.left->line_c)) {
+						result.left->perpendicular_distance()) {
 
 					result.left = segment;
 				}
 
 			} else {
 
-				// RIGHT
-				if (!result.right.has_value() ||
+				if (!result.right ||
 					segment.perpendicular_distance() <
-						std::abs(result.right->line_c)) {
+						result.right->perpendicular_distance()) {
 
 					result.right = segment;
 				}
@@ -415,18 +481,20 @@ ResolvedWalls LidarProcessor::resolve_track_walls(
 
 			continue;
 		}
-		const float front_angle_error = std::abs(segment.angle_rad);
+
+		const float front_angle_error = std::abs(corrected_angle);
 
 		if (front_angle_error < MAX_ANGLE_ERROR_RAD && center.y > 0.0f) {
 
-			if (!result.front.has_value() ||
+			if (!result.front ||
 				segment.perpendicular_distance() <
-					std::abs(result.front->line_c)) {
+					result.front->perpendicular_distance()) {
 
 				result.front = segment;
 			}
 		}
 	}
+
 	return result;
 }
 
@@ -501,7 +569,7 @@ std::vector<ObstacleObject> LidarProcessor::detect_obstacles(
 	std::vector<ObstacleObject> obstacles;
 
 	constexpr float WALL_REJECT_DISTANCE_M = 0.05f;
-	constexpr float WALL_EXTENSION_M = 0.08f;
+	constexpr float WALL_EXTENSION_M = 0.09f;
 
 	constexpr float CLUSTER_GAP_M = 0.07f;
 
@@ -515,8 +583,20 @@ std::vector<ObstacleObject> LidarProcessor::detect_obstacles(
 	std::vector<CartesianPoint> candidates;
 	candidates.reserve(points.size());
 
-	auto point_near_wall = [&](const CartesianPoint &point,
-							   const std::optional<LineSegment> &wall) {
+	auto point_near_side_wall = [&](const CartesianPoint &point,
+									const std::optional<LineSegment> &wall) {
+		if (!wall.has_value()) {
+			return false;
+		}
+
+		const float distance = std::abs(wall->normal_x * point.x_m +
+			wall->normal_y * point.y_m + wall->line_c);
+
+		return distance < WALL_REJECT_DISTANCE_M;
+	};
+
+	auto point_near_front_wall = [&](const CartesianPoint &point,
+									 const std::optional<LineSegment> &wall) {
 		if (!wall.has_value()) {
 			return false;
 		}
@@ -533,10 +613,8 @@ std::vector<ObstacleObject> LidarProcessor::detect_obstacles(
 
 		const float length = std::sqrt(length_sq);
 
-		// Projection along the finite wall.
-		float t = (p - wall->start).dot(ab) / length_sq;
+		const float t = (p - wall->start).dot(ab) / length_sq;
 
-		// Allow a small extension beyond both endpoints.
 		const float extension_t = WALL_EXTENSION_M / length;
 
 		if (t < -extension_t || t > 1.0f + extension_t) {
@@ -544,12 +622,8 @@ std::vector<ObstacleObject> LidarProcessor::detect_obstacles(
 			return false;
 		}
 
-		// Clamp only for closest-point calculation.
-		t = std::clamp(t, 0.0f, 1.0f);
-
-		const cv::Point2f closest = wall->start + ab * t;
-
-		const float distance = cv::norm(p - closest);
+		const float distance = std::abs(
+			wall->normal_x * p.x + wall->normal_y * p.y + wall->line_c);
 
 		return distance < WALL_REJECT_DISTANCE_M;
 	};
@@ -560,15 +634,15 @@ std::vector<ObstacleObject> LidarProcessor::detect_obstacles(
 			continue;
 		}
 
-		if (point_near_wall(point, walls.left)) {
+		if (point_near_side_wall(point, walls.left)) {
 			continue;
 		}
 
-		if (point_near_wall(point, walls.right)) {
+		if (point_near_side_wall(point, walls.right)) {
 			continue;
 		}
 
-		if (point_near_wall(point, walls.front)) {
+		if (point_near_front_wall(point, walls.front)) {
 			continue;
 		}
 

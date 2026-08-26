@@ -169,7 +169,7 @@ void LidarModule::processScan(
 
 void LidarModule::scan_loop() {
 	std::uint8_t fail_count = 0;
-	constexpr sl_u16 TARGET_RPM = 1200; // 20 Hz
+	constexpr sl_u16 TARGET_RPM = 1050; // 20 Hz
 	lidar_driver_->setMotorSpeed(TARGET_RPM);
 	while (running_) {
 		sl_lidar_response_measurement_node_hq_t nodes[8192];

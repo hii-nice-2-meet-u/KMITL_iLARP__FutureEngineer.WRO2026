@@ -91,9 +91,9 @@ struct ProcessedLidarData {
 class LidarProcessor {
   public:
 	ProcessedLidarData process(const TimedLidarData &data,
-		std::size_t min_segment_point = 5, float max_line_error_m = 0.035f,
-		float max_point_gap_m = 0.10f, float max_angle_diff = 3.0f,
-		float max_collinear_error_m = 0.03f,
+		float heading_error_rad = 0.0f, std::size_t min_segment_point = 5,
+		float max_line_error_m = 0.035f, float max_point_gap_m = 0.10f,
+		float max_angle_diff = 3.0f, float max_collinear_error_m = 0.03f,
 		float max_segment_gap_m = 0.05f) const;
 
 	void draw_segment(
@@ -132,11 +132,8 @@ class LidarProcessor {
 
 	// clang-format on
 
-	ResolvedWalls resolve_track_walls(
-		const std::vector<LineSegment> &segments) const;
-
-	TrackWalls resolve_inner_outer(
-		const ResolvedWalls &walls, DrivingDirection direction);
+	ResolvedWalls resolve_track_walls(const std::vector<LineSegment> &segments,
+		float heading_error_rad) const;
 
 	bool is_same_segment(
 		const LineSegment &a, const std::optional<LineSegment> &b) const;
