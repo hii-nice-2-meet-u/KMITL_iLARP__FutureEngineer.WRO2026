@@ -1,16 +1,217 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <iomanip>
 #include <iostream>
 #include <optional>
+#include <sstream>
+#include <string>
 
 #include <opencv2/opencv.hpp>
 
 #include "lidar_module.hpp"
 #include "lidar_processor.hpp"
+#include "sl_lidar_cmd.h"
+#include "sl_lidar_driver.h"
+#include "sl_types.h"
+
+namespace {
+
+constexpr int MAP_WIDTH = 800;
+constexpr int MAP_HEIGHT = 800;
+constexpr float SCALE_PX_PER_M = 300.0f;
+constexpr float PI = 3.14159265358979323846f;
+
+const cv::Point2f ORIGIN(static_cast<float>(MAP_WIDTH) * 0.5f,
+	static_cast<float>(MAP_HEIGHT) * 0.5f);
+
+cv::Point world_to_pixel(const cv::Point2f &point_m) {
+	return {
+		static_cast<int>(std::lround(ORIGIN.x + point_m.x * SCALE_PX_PER_M)),
+		static_cast<int>(std::lround(ORIGIN.y - point_m.y * SCALE_PX_PER_M))};
+}
+
+bool is_inside_map(const cv::Point &pixel) {
+	return pixel.x >= 0 && pixel.x < MAP_WIDTH && pixel.y >= 0 &&
+		pixel.y < MAP_HEIGHT;
+}
+
+void draw_corner(
+	cv::Mat &map, const std::optional<lidar::CornerEstimate> &corner) {
+
+	if (!corner.has_value()) {
+		return;
+	}
+
+	const cv::Point pixel = world_to_pixel(corner->position);
+
+	// Big circle
+	cv::circle(map, pixel, 10, cv::Scalar(0, 165, 255), 2, cv::LINE_AA);
+
+	// X marker
+	cv::line(map, pixel + cv::Point(-7, -7), pixel + cv::Point(7, 7),
+		cv::Scalar(0, 165, 255), 2, cv::LINE_AA);
+
+	cv::line(map, pixel + cv::Point(-7, 7), pixel + cv::Point(7, -7),
+		cv::Scalar(0, 165, 255), 2, cv::LINE_AA);
+
+	// Label
+	cv::putText(map, "CORNER", pixel + cv::Point(12, -12),
+		cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 165, 255), 2, cv::LINE_AA);
+}
+
+// Must use the same coordinate convention as LidarProcessor::polar2cartesian().
+//
+// Robot frame:
+//   +X = right
+//   +Y = front
+//
+// The LiDAR is mounted rotated 180 degrees, therefore the minus signs.
+cv::Point2f raw_to_cartesian(const LidarPoint &point) {
+	const float rad = point.angle_deg * PI / 180.0f;
+
+	return {
+		-point.distance_m * std::sin(rad), -point.distance_m * std::cos(rad)};
+}
+
+std::string fixed(float value, int precision) {
+	std::ostringstream stream;
+	stream << std::fixed << std::setprecision(precision) << value;
+	return stream.str();
+}
+
+void draw_raw_points(cv::Mat &map, const TimedLidarData &scan) {
+
+	for (const auto &point : scan.points) {
+		if (point.distance_m <= 0.0f) {
+			continue;
+		}
+
+		const cv::Point pixel = world_to_pixel(raw_to_cartesian(point));
+
+		if (!is_inside_map(pixel)) {
+			continue;
+		}
+
+		cv::circle(map, pixel, 1, cv::Scalar(90, 90, 90), -1);
+	}
+}
+
+void draw_line_segments(
+	cv::Mat &map, const lidar::ProcessedLidarData &processed) {
+
+	for (const auto &segment : processed.line_segments) {
+		cv::line(map, world_to_pixel(segment.start),
+			world_to_pixel(segment.end), cv::Scalar(180, 180, 180), 1,
+			cv::LINE_AA);
+	}
+}
+
+void draw_wall(cv::Mat &map, const std::optional<lidar::LineSegment> &wall) {
+
+	if (!wall.has_value()) {
+		return;
+	}
+
+	cv::line(map, world_to_pixel(wall->start), world_to_pixel(wall->end),
+		cv::Scalar(0, 255, 0), 3, cv::LINE_AA);
+}
+
+void draw_walls(cv::Mat &map, const lidar::ProcessedLidarData &processed) {
+
+	draw_wall(map, processed.walls.left);
+	draw_wall(map, processed.walls.right);
+	draw_wall(map, processed.walls.front);
+}
+
+void draw_obstacles(cv::Mat &map, const lidar::ProcessedLidarData &processed) {
+
+	for (const auto &obstacle : processed.obstacles) {
+		const cv::Point2f start = obstacle.start();
+		const cv::Point2f end = obstacle.end();
+		const cv::Point2f center = obstacle.center;
+
+		cv::line(map, world_to_pixel(start), world_to_pixel(end),
+			cv::Scalar(0, 0, 255), 4, cv::LINE_AA);
+
+		cv::circle(map, world_to_pixel(center), 4, cv::Scalar(0, 255, 255), -1);
+
+		const float distance_m = obstacle.distance_m();
+		const float bearing_deg = obstacle.bearing_rad() * 180.0f / PI;
+
+		const std::string label =
+			"D:" + fixed(distance_m, 2) + " B:" + fixed(bearing_deg, 1);
+
+		cv::putText(map, label, world_to_pixel(center) + cv::Point(8, -8),
+			cv::FONT_HERSHEY_SIMPLEX, 0.4, cv::Scalar(0, 255, 255), 1,
+			cv::LINE_AA);
+	}
+}
+
+void draw_parking_wall(
+	cv::Mat &map, const lidar::ProcessedLidarData &processed) {
+
+	if (!processed.parking_wall.has_value()) {
+		return;
+	}
+
+	const auto &wall = *processed.parking_wall;
+
+	cv::line(map, world_to_pixel(wall.start), world_to_pixel(wall.end),
+		cv::Scalar(255, 0, 255), 2, cv::LINE_AA);
+}
+
+void draw_robot_frame(cv::Mat &map) {
+	const cv::Point origin_pixel(
+		static_cast<int>(ORIGIN.x), static_cast<int>(ORIGIN.y));
+
+	// LiDAR origin
+	cv::circle(map, origin_pixel, 5, cv::Scalar(255, 0, 0), -1);
+
+	// +Y / front
+	cv::line(map, origin_pixel, origin_pixel + cv::Point(0, -30),
+		cv::Scalar(255, 255, 255), 2, cv::LINE_AA);
+
+	cv::putText(map, "FRONT", origin_pixel + cv::Point(8, -32),
+		cv::FONT_HERSHEY_SIMPLEX, 0.4, cv::Scalar(255, 255, 255), 1,
+		cv::LINE_AA);
+}
+
+int count_walls(const lidar::ProcessedLidarData &processed) {
+	int count = 0;
+
+	count += processed.walls.left.has_value() ? 1 : 0;
+	count += processed.walls.right.has_value() ? 1 : 0;
+	count += processed.walls.front.has_value() ? 1 : 0;
+
+	return count;
+}
+
+void draw_debug_info(cv::Mat &map, const TimedLidarData &scan,
+	const lidar::ProcessedLidarData &processed, std::int64_t process_us,
+	std::uint64_t frame_diff_us) {
+
+	const std::string info = "Points: " + std::to_string(scan.points.size()) +
+		"  Segments: " + std::to_string(processed.line_segments.size()) +
+		"  Walls: " + std::to_string(count_walls(processed)) +
+		"  Obstacles: " + std::to_string(processed.obstacles.size());
+
+	const std::string timing =
+		"Process: " + fixed(static_cast<float>(process_us) / 1000.0f, 2) +
+		" ms  Frame: " + fixed(static_cast<float>(frame_diff_us) / 1000.0f, 2) +
+		" ms";
+
+	cv::putText(map, info, cv::Point(10, 25), cv::FONT_HERSHEY_SIMPLEX, 0.5,
+		cv::Scalar(255, 255, 255), 1, cv::LINE_AA);
+
+	cv::putText(map, timing, cv::Point(10, 50), cv::FONT_HERSHEY_SIMPLEX, 0.5,
+		cv::Scalar(255, 255, 255), 1, cv::LINE_AA);
+}
+
+} // namespace
 
 int main() {
-	// lidar::LidarModule lidar;
+
 	lidar::LidarModule lidar("/dev/ttyAMA0", 1000000);
 	lidar::LidarProcessor lidar_processor;
 
@@ -26,30 +227,9 @@ int main() {
 
 	std::cout << "Waiting for LiDAR frames...\n";
 
-	// Debug map settings
-	constexpr int MAP_WIDTH = 800;
-	constexpr int MAP_HEIGHT = 800;
-
-	// 1 meter = 300 pixels
-	constexpr float SCALE_PX_PER_M = 300.0f;
-
 	cv::Mat debug_map(MAP_HEIGHT, MAP_WIDTH, CV_8UC3, cv::Scalar(0, 0, 0));
 
-	const cv::Point2f origin(static_cast<float>(MAP_WIDTH) * 0.5f,
-		static_cast<float>(MAP_HEIGHT) * 0.5f);
-
-	// +X = right
-	// +Y = front
-	auto world_to_pixel = [&](const cv::Point2f &point_m) -> cv::Point {
-		const float pixel_x = origin.x + point_m.x * SCALE_PX_PER_M;
-
-		const float pixel_y = origin.y - point_m.y * SCALE_PX_PER_M;
-
-		return cv::Point(static_cast<int>(std::lround(pixel_x)),
-			static_cast<int>(std::lround(pixel_y)));
-	};
-
-	std::uint64_t timestamp_prev = 0;
+	std::uint64_t previous_timestamp_us = 0;
 
 	while (true) {
 		TimedLidarData scan;
@@ -63,14 +243,12 @@ int main() {
 			continue;
 		}
 
-		// -----------------------------
-		// Process LiDAR
-		// -----------------------------
-
 		const auto process_start = std::chrono::steady_clock::now();
 
 		const lidar::ProcessedLidarData processed =
 			lidar_processor.process(scan);
+
+		const auto corner = processed.corner;
 
 		const auto process_end = std::chrono::steady_clock::now();
 
@@ -79,155 +257,29 @@ int main() {
 				process_end - process_start)
 				.count();
 
-		// -----------------------------
-		// Frame interval
-		// -----------------------------
-
 		std::uint64_t frame_diff_us = 0;
 
-		if (timestamp_prev != 0) {
-			frame_diff_us = processed.timestamp_us - timestamp_prev;
+		if (previous_timestamp_us != 0) {
+			frame_diff_us = scan.timestamp_us - previous_timestamp_us;
 		}
 
-		timestamp_prev = processed.timestamp_us;
-
-		// -----------------------------
-		// Clear map
-		// -----------------------------
+		previous_timestamp_us = scan.timestamp_us;
 
 		debug_map.setTo(cv::Scalar(0, 0, 0));
 
-		// -----------------------------
-		// All LineSegments
-		// Gray = raw geometry
-		// -----------------------------
-
-		for (const auto &segment : processed.line_segments) {
-
-			cv::line(debug_map, world_to_pixel(segment.start),
-				world_to_pixel(segment.end), cv::Scalar(80, 80, 80), 1,
-				cv::LINE_AA);
-		}
-
-		// -----------------------------
-		// Resolved track walls
-		// Green
-		// -----------------------------
-
-		auto draw_wall = [&](const std::optional<lidar::LineSegment> &wall) {
-			if (!wall.has_value()) {
-				return;
-			}
-
-			cv::line(debug_map, world_to_pixel(wall->start),
-				world_to_pixel(wall->end), cv::Scalar(0, 255, 0), 3,
-				cv::LINE_AA);
-		};
-
-		draw_wall(processed.walls.left);
-		draw_wall(processed.walls.right);
-		draw_wall(processed.walls.front);
-
-		// -----------------------------
-		// Obstacles
-		// Red
-		// -----------------------------
-
-		for (const auto &obstacle : processed.obstacles) {
-			const auto obj_start = obstacle.start();
-			const auto obj_end = obstacle.end();
-			cv::line(debug_map, world_to_pixel(obj_start),
-				world_to_pixel(obj_end), cv::Scalar(0, 0, 255), 4,
-				cv::LINE_AA);
-
-			auto const &center = obstacle.center;
-
-			// Obstacle center
-			cv::circle(debug_map, world_to_pixel(center), 4,
-				cv::Scalar(0, 255, 255), -1);
-
-			// Distance + bearing
-			auto const &distance_m = obstacle.distance_m();
-
-			auto const &bearing_rad = obstacle.bearing_rad();
-
-			const float bearing_deg =
-				bearing_rad * 180.0f / static_cast<float>(M_PI);
-
-			const std::string obstacle_info =
-				"D:" + std::to_string(distance_m).substr(0, 4) +
-				" B:" + std::to_string(bearing_deg).substr(0, 5);
-
-			cv::putText(debug_map, obstacle_info,
-				world_to_pixel(center) + cv::Point(8, -8),
-				cv::FONT_HERSHEY_SIMPLEX, 0.4, cv::Scalar(0, 255, 255), 1,
-				cv::LINE_AA);
-		}
-
-		// -----------------------------
-		// LiDAR origin
-		// Blue
-		// -----------------------------
-
-		cv::circle(debug_map,
-			cv::Point(static_cast<int>(origin.x), static_cast<int>(origin.y)),
-			5, cv::Scalar(255, 0, 0), -1);
-
-		// Front direction indicator
-		cv::line(debug_map,
-			cv::Point(static_cast<int>(origin.x), static_cast<int>(origin.y)),
-			cv::Point(
-				static_cast<int>(origin.x), static_cast<int>(origin.y - 30)),
-			cv::Scalar(255, 255, 255), 2, cv::LINE_AA);
-
-		// -----------------------------
-		// Count resolved walls
-		// -----------------------------
-
-		int wall_count = 0;
-
-		if (processed.walls.left.has_value()) {
-			++wall_count;
-		}
-
-		if (processed.walls.right.has_value()) {
-			++wall_count;
-		}
-
-		if (processed.walls.front.has_value()) {
-			++wall_count;
-		}
-
-		// -----------------------------
-		// Debug info
-		// -----------------------------
-
-		const std::string info =
-			"Points: " + std::to_string(scan.points.size()) +
-			"  Segments: " + std::to_string(processed.line_segments.size()) +
-			"  Walls: " + std::to_string(wall_count) +
-			"  Obstacles: " + std::to_string(processed.obstacles.size());
-
-		cv::putText(debug_map, info, cv::Point(10, 25),
-			cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(255, 255, 255), 1,
-			cv::LINE_AA);
-
-		const std::string timing =
-			"Process: " + std::to_string(process_us / 1000.0) +
-			" ms  Frame: " + std::to_string(frame_diff_us / 1000.0) + " ms";
-
-		cv::putText(debug_map, timing, cv::Point(10, 50),
-			cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(255, 255, 255), 1,
-			cv::LINE_AA);
-
-		// -----------------------------
-		// Show
-		// -----------------------------
+		// Draw from low-level data to high-level interpretation.
+		draw_raw_points(debug_map, scan);
+		draw_line_segments(debug_map, processed);
+		draw_walls(debug_map, processed);
+		// draw_corner(debug_map, corner);
+		// draw_obstacles(debug_map, processed);
+		// draw_parking_wall(debug_map, processed);
+		draw_robot_frame(debug_map);
+		draw_debug_info(debug_map, scan, processed, process_us, frame_diff_us);
 
 		cv::imshow("LiDAR Debug Map", debug_map);
 
 		const int key = cv::waitKey(1);
-
 		if (key == 'q' || key == 27) {
 			break;
 		}
