@@ -103,10 +103,6 @@ bool CameraProcessor::is_valid_contour(
 	return true;
 }
 
-// cv::Point2f CameraProcessor::calculate_bottom_center(
-// 	const cv::Rect &b_b) const {
-// 	return cv::Point2f(b_b.x + b_b.width * 0.5f, b_b.y + b_b.height)
-// }
 
 float CameraProcessor::calculate_bearing(float pixel_x) const {
 	return std::atan((pixel_x - cx) / fx);

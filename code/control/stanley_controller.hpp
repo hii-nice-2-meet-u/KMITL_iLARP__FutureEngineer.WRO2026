@@ -1,27 +1,56 @@
-#include "stanley_controller.hpp"
+#pragma once
 
+#include <algorithm>
+#include <cmath>
 
 namespace control {
 
-StanleyController::StanleyController(StanleyConfig config) : config_(config) {}
+struct StanleyConfig {
+	// Cross-track correction gain
+	float k{1.0f};
 
-float StanleyController::calculate(
-	float cross_track_error_m, float heading_error_rad, float speed_mps) const {
+	// Prevent aggressive steering when speed is near zero
+	float softening_speed_mps{0.20f};
 
-	const float speed = std::max(std::abs(speed_mps), 0.0f);
+	// Physical steering limit of Ackermann front wheels
+	float max_steering_rad{0.523599f}; // 30 deg
+};
 
-	const float cross_track_term = std::atan2(
-		config_.k * cross_track_error_m, speed + config_.softening_speed_mps);
+class StanleyController {
+  public:
+	explicit StanleyController(StanleyConfig config = {});
 
-	const float steering = heading_error_rad + cross_track_term;
+	/**
+	 * Stanley steering controller
+	 *
+	 * delta =
+	 *     heading_error
+	 *     + atan2(k * cross_track_error,
+	 *             speed + softening_speed)
+	 *
+	 * @param cross_track_error_m
+	 *     Lateral error from target path [m]
+	 *
+	 * @param heading_error_rad
+	 *     Path heading - vehicle heading [rad]
+	 *
+	 * @param speed_mps
+	 *     Current forward vehicle speed [m/s]
+	 *
+	 * @return
+	 *     Desired front-wheel steering angle [rad]
+	 *     negative = LEFT
+	 *     positive = RIGHT
+	 */
+	float calculate(float cross_track_error_m, float heading_error_rad,
+		float speed_mps) const;
 
-	return std::clamp(
-		steering, -config_.max_steering_rad, config_.max_steering_rad);
-}
+	void set_config(const StanleyConfig &config);
 
-void StanleyController::set_config(const StanleyConfig &config) {
+	const StanleyConfig &config() const { return config_; }
 
-	config_ = config;
-}
+  private:
+	StanleyConfig config_;
+};
 
 } // namespace control

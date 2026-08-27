@@ -4,6 +4,7 @@
 #include <iomanip>
 #include <iostream>
 #include <linux/spi/spidev.h>
+#include <ostream>
 #include <sys/ioctl.h>
 #include <thread>
 #include <unistd.h>
@@ -41,6 +42,19 @@ void print_rx(const uint8_t *rx, std::size_t len) {
 	std::cout << std::dec << '\n';
 }
 
+void print_tx(const uint8_t *rx, std::size_t len) {
+
+	std::cout << "TX: ";
+
+	for (std::size_t i = 0; i < len; ++i) {
+
+		std::cout << "0x" << std::hex << std::setw(2) << std::setfill('0')
+				  << static_cast<int>(rx[i]) << ' ';
+	}
+
+	std::cout << std::dec << "\t";
+}
+
 int main() {
 
 	const int fd = open(SPI_DEVICE, O_RDWR);
@@ -56,7 +70,7 @@ int main() {
 
 	uint8_t bits = 8;
 
-	uint32_t speed = 25'000'000;
+	uint32_t speed = 15'000'000;
 
 	if (ioctl(fd, SPI_IOC_WR_MODE, &mode) < 0 ||
 		ioctl(fd, SPI_IOC_WR_BITS_PER_WORD, &bits) < 0 ||
@@ -69,15 +83,10 @@ int main() {
 		return 1;
 	}
 
-	const uint8_t command[]{0xFF, 0x00, 0x4B};
-
+	const uint8_t command[]{0x01, 0xFF, 0xFF};
 	const uint8_t dummy[]{0x00, 0x00, 0x00};
 
 	while (true) {
-
-		// -----------------------------------------------------
-		// 1. Send FF 00 4B
-		// -----------------------------------------------------
 
 		uint8_t rx_command[3]{};
 
@@ -89,26 +98,21 @@ int main() {
 			break;
 		}
 
-		std::cout << "TX: FF 00 4B  ";
-
+		print_tx(command, sizeof(command));
 		print_rx(rx_command, sizeof(rx_command));
-
-		// -----------------------------------------------------
-		// 2. Send 00 00 00
-		// -----------------------------------------------------
-		std::this_thread::sleep_for(std::chrono::seconds(1));
-
+		
+		// std::this_thread::sleep_for(std::chrono::seconds(1));
+		
 		uint8_t rx_data[3]{};
-
+		
 		if (!spi_transfer(fd, dummy, rx_data, sizeof(dummy), speed, bits)) {
-
+			
 			std::cerr << "SPI data transfer failed\n";
-
+			
 			break;
 		}
-
-		std::cout << "TX: 00 00 00  ";
-
+		
+		print_tx(dummy, sizeof(dummy));
 		print_rx(rx_data, sizeof(rx_data));
 
 		// -----------------------------------------------------

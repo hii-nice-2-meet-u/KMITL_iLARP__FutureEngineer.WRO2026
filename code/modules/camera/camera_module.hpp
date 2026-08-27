@@ -1,6 +1,11 @@
+#pragma once
+
+#include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <iomanip>
 #include <iostream>
+#include <mutex>
 #include <opencv2/opencv.hpp>
 #include <random>
 #include <sstream>

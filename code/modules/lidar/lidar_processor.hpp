@@ -7,7 +7,6 @@
 #include <optional>
 #include <vector>
 
-#include "direction.hpp"
 #include "lidar_struct.hpp"
 #include <opencv2/core.hpp>
 #include <opencv2/core/types.hpp>
@@ -44,12 +43,6 @@ struct LineSegment {
 struct ResolvedWalls {
 	std::optional<LineSegment> left;
 	std::optional<LineSegment> right;
-	std::optional<LineSegment> front;
-};
-
-struct TrackWalls {
-	std::optional<LineSegment> inner;
-	std::optional<LineSegment> outer;
 	std::optional<LineSegment> front;
 };
 

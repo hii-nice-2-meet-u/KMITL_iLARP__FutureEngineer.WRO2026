@@ -14,8 +14,8 @@ struct NavigationCommand {
 	// speed:    0 -> stop, 100 -> max forward
 	// steering: 1000.0 -> left, 2100.0 -> right
 	float speed{0.0f};
-	float servo_pulse{0.0f};
-} ;
+	float steering_rad{0.0f};
+};
 
 struct NavigationDebug {
 	// Wall following

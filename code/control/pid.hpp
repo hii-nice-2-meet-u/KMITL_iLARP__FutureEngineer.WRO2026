@@ -12,8 +12,10 @@ struct PIDConfig {
 	float min_output{-1.0f};
 	float max_output{1.0f};
 
-	// float min_integral{-1.0f};
-	// float max_integral{1.0f};
+	float min_integral{-1.0f};
+	float max_integral{1.0f};
+
+	float max_dt_s{0.10f};
 };
 
 class PID {
