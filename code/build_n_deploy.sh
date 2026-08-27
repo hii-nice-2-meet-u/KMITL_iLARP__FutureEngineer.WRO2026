@@ -152,6 +152,11 @@ rsync -av \
     "$INSTALL_DIR/" \
     "hii@hii.local:$PI_TARGET_DIR/"
 
+# rsync -av \
+#     --delete \
+#     --exclude 'include/' \
+#     "$INSTALL_DIR/" \
+#     "$PI_USER@$PI_IP:$PI_TARGET_DIR/"
 echo
 echo "SUCCESS!"
 echo "Deployed to Pi 5 at: $PI_TARGET_DIR"
