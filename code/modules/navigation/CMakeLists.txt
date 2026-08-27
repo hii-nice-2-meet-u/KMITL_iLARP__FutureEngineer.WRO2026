@@ -1,6 +1,6 @@
 add_library(navigation STATIC
-    initial_direction_estimator.cpp
-    initial_direction_estimator.hpp
+    init_direction.cpp
+    init_direction.hpp
 )
 target_include_directories(navigation PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}

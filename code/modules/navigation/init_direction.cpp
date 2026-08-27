@@ -1,4 +1,4 @@
-#include "initial_direction_estimator.hpp"
+#include "init_direction.hpp"
 namespace navigation {
 
 namespace {
