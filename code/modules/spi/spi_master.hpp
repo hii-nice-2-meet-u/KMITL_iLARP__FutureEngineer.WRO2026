@@ -1,52 +1,52 @@
+#include <chrono>
+#include <cstdint>
 #include <fcntl.h>
+#include <iomanip>
 #include <iostream>
+#include <linux/spi/spi.h>
 #include <linux/spi/spidev.h>
+#include <optional>
+#include <ostream>
 #include <sys/ioctl.h>
+#include <thread>
 #include <unistd.h>
 
-#define SPI_DEVICE "/dev/spidev0.0"
+namespace spi {
 
-int main() {
-	int fd = open(SPI_DEVICE, O_RDWR);
-	if (fd < 0) {
-		std::cerr << "Cannot open SPI port" << std::endl;
-		return 1;
-	}
+enum Command : uint8_t {
+	NULL_ = 0x00,
+	ECTO_TEST = 0x01,
 
-	uint8_t mode = SPI_MODE_0;
-	uint8_t bits = 8;
-	uint32_t speed = 1000000; // ความเร็ว 1 MHz
+	M_ENABLE = 0x20,
+	M_DISABLE = 0x21,
+	M1_POW = 0x20, //LEFT
+	M2_POW = 0x21, //RIGHT
+	M1_SPD = 0x26,
+	M2_SPD = 0x27,
+	
+	SERVO_PULSE = 0x40,
+	SERVO_ANGLE = 0x41,
+	
+	VOL_CHECK = 0xa0;
+};
 
-	ioctl(fd, SPI_IOC_WR_MODE, &mode);
-	ioctl(fd, SPI_IOC_WR_BITS_PER_WORD, &bits);
-	ioctl(fd, SPI_IOC_WR_MAX_SPEED_HZ, &speed);
+class SPI {
+  public:
+	SPI();
+	~SPI();
 
-	uint8_t tx[] = {0x9F, 0xFF, 0xFF}; // ตัวอย่างส่งคำสั่ง Read ID
-	uint8_t rx[3] = {0};
+	bool init(const std::uint8_t &num_port = 0, std::uint8_t mode = SPI_MODE_0,
+		std::uint8_t bits = 8, std::uint32_t speed = 15'000'000) const;
+	void closeBus();
 
-	struct spi_ioc_transfer tr = {};
-	tr.tx_buf = (unsigned long)tx;
-	tr.rx_buf = (unsigned long)rx;
-	tr.len = sizeof(tx);
-	tr.speed_hz = speed;
-	tr.bits_per_word = bits;
+	std::optional<uint32_t> get_voltage();
 
-	if (ioctl(fd, SPI_IOC_MESSAGE(1), &tr) < 0) {
-		std::cerr << "Cannot send data SPI (SPI_IOC_MESSAGE) ได้" << std::endl;
-	} else {
-		std::cout << "Succesfully recieved data: " << std::hex << (int)rx[0]
-				  << " " << (int)rx[1] << " " << (int)rx[2] << std::endl;
-	}
+  private:
+	bool send_data(const Command &command, std::uint16_t tx_data, uint8_t &rx);
 
-	uint8_t tx[] = {0x00, 0x00, 0x00};
-	if(ioctl(fd, SPI_IOC_MESSAGE(1), &tr) < 0) {
-		std::cerr << "Cannot send data SPI (SPI_IOC_MESSAGE) ได้" << std::endl;
-	}
-	std::this_thread::sleep_for(std::chrono::seconds(1));
-	uint8_t tx[] = {0xFF, 0x00, 0x00};
-	if(ioctl(fd, SPI_IOC_MESSAGE(1), &tr) < 0) {
-		std::cerr << "Cannot send data SPI (SPI_IOC_MESSAGE) ได้" << std::endl;
-	}
-	close(fd);
-	return 0;
-}
+  private:
+	int fd_{-1};
+	std::uint32_t speed_{0};
+	std::uint8_t bits_{0};
+};
+} // namespace spi

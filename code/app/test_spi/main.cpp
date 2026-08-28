@@ -30,7 +30,9 @@ bool spi_transfer(int fd, const uint8_t *tx, uint8_t *rx, std::size_t len,
 }
 
 void print_rx(const uint8_t *rx, std::size_t len) {
+	// std::uint16_t result = (static_cast<uint16_t>(rx[1]) << 8) | rx[2];
 
+	// std::cout << "RX: " << std::hex << result << '\n';
 	std::cout << "RX: ";
 
 	for (std::size_t i = 0; i < len; ++i) {
@@ -83,8 +85,8 @@ int main() {
 		return 1;
 	}
 
-	const uint8_t command[]{0x01, 0xFF, 0xFF};
-	const uint8_t dummy[]{0x00, 0x00, 0x00};
+	const uint8_t command[]{0xa0, 0x00, 0x00};
+	const uint8_t dummy[]{0xa0, 0x00, 0x00};
 
 	while (true) {
 
@@ -100,18 +102,18 @@ int main() {
 
 		print_tx(command, sizeof(command));
 		print_rx(rx_command, sizeof(rx_command));
-		
-		// std::this_thread::sleep_for(std::chrono::seconds(1));
-		
+
+		std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
 		uint8_t rx_data[3]{};
-		
+
 		if (!spi_transfer(fd, dummy, rx_data, sizeof(dummy), speed, bits)) {
-			
+
 			std::cerr << "SPI data transfer failed\n";
-			
+
 			break;
 		}
-		
+
 		print_tx(dummy, sizeof(dummy));
 		print_rx(rx_data, sizeof(rx_data));
 
@@ -120,6 +122,8 @@ int main() {
 		// -----------------------------------------------------
 
 		std::this_thread::sleep_for(std::chrono::seconds(1));
+
+		std::cout << "======================================" << '\n';
 	}
 
 	close(fd);
