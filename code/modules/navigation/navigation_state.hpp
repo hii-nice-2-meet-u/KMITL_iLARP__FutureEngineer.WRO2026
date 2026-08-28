@@ -28,11 +28,13 @@ struct NavigationDebug {
 	// Turning
 	float heading_error_rad{0.0f};
 	float heading_tracking_error_rad{0.0f};
+	float turn_reference_heading_rad{0.0f};
 	float turn_progress{0.0f};
 	float turn_feedforward_rad{0.0f};
 
 	// Command shaping
 	float raw_steering_rad{0.0f};
+	float raw_target_speed_mps{0.0f};
 	float corner_speed_mps{0.0f};
 	float effective_turn_trigger_m{0.0f};
 	float update_dt_s{0.0f};

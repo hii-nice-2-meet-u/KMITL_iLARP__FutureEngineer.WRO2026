@@ -20,7 +20,9 @@ namespace {
 // CONFIG
 // =============================================================================
 
-constexpr int MAP_WIDTH = 1000;
+constexpr int WORLD_VIEW_WIDTH = 920;
+constexpr int PANEL_WIDTH = 500;
+constexpr int MAP_WIDTH = WORLD_VIEW_WIDTH + PANEL_WIDTH;
 constexpr int MAP_HEIGHT = 900;
 
 constexpr float SCALE_PX_PER_M = 300.0f;
@@ -28,7 +30,7 @@ constexpr float SCALE_PX_PER_M = 300.0f;
 constexpr float PI = 3.14159265358979323846f;
 constexpr float RAD_TO_DEG = 180.0f / PI;
 
-const cv::Point2f ORIGIN(static_cast<float>(MAP_WIDTH) * 0.50f,
+const cv::Point2f ORIGIN(static_cast<float>(WORLD_VIEW_WIDTH) * 0.50f,
 	static_cast<float>(MAP_HEIGHT) * 0.68f);
 
 // =============================================================================
@@ -57,9 +59,9 @@ cv::Point world_to_pixel(const cv::Point2f &point_m) {
 		static_cast<int>(std::lround(ORIGIN.y - point_m.y * SCALE_PX_PER_M))};
 }
 
-bool is_inside_map(const cv::Point &p) {
+bool is_inside_world_view(const cv::Point &p) {
 
-	return p.x >= 0 && p.x < MAP_WIDTH && p.y >= 0 && p.y < MAP_HEIGHT;
+	return p.x >= 0 && p.x < WORLD_VIEW_WIDTH && p.y >= 0 && p.y < MAP_HEIGHT;
 }
 
 // =============================================================================
@@ -150,6 +152,16 @@ std::string expected_outer_string(
 	return "RIGHT";
 }
 
+std::string turn_direction_to_string(
+	const std::optional<DrivingDirection> &direction) {
+
+	if (!direction.has_value()) {
+		return "UNKNOWN";
+	}
+
+	return *direction == DrivingDirection::CLOCKWISE ? "RIGHT" : "LEFT";
+}
+
 // =============================================================================
 // RAW LIDAR
 // =============================================================================
@@ -180,7 +192,8 @@ void draw_grid(cv::Mat &map) {
 
 	const int spacing = static_cast<int>(GRID_M * SCALE_PX_PER_M);
 
-	for (int x = static_cast<int>(ORIGIN.x); x < MAP_WIDTH; x += spacing) {
+	for (int x = static_cast<int>(ORIGIN.x); x < WORLD_VIEW_WIDTH;
+		 x += spacing) {
 
 		cv::line(map, {x, 0}, {x, MAP_HEIGHT}, cv::Scalar(25, 25, 25), 1);
 	}
@@ -192,13 +205,16 @@ void draw_grid(cv::Mat &map) {
 
 	for (int y = static_cast<int>(ORIGIN.y); y < MAP_HEIGHT; y += spacing) {
 
-		cv::line(map, {0, y}, {MAP_WIDTH, y}, cv::Scalar(25, 25, 25), 1);
+		cv::line(map, {0, y}, {WORLD_VIEW_WIDTH, y}, cv::Scalar(25, 25, 25), 1);
 	}
 
 	for (int y = static_cast<int>(ORIGIN.y); y >= 0; y -= spacing) {
 
-		cv::line(map, {0, y}, {MAP_WIDTH, y}, cv::Scalar(25, 25, 25), 1);
+		cv::line(map, {0, y}, {WORLD_VIEW_WIDTH, y}, cv::Scalar(25, 25, 25), 1);
 	}
+
+	cv::line(map, {WORLD_VIEW_WIDTH, 0}, {WORLD_VIEW_WIDTH, MAP_HEIGHT},
+		cv::Scalar(75, 75, 75), 2);
 }
 
 // =============================================================================
@@ -216,7 +232,7 @@ void draw_raw_points(cv::Mat &map, const TimedLidarData &scan) {
 
 		const cv::Point pixel = world_to_pixel(raw_to_cartesian(point));
 
-		if (!is_inside_map(pixel)) {
+		if (!is_inside_world_view(pixel)) {
 			continue;
 		}
 
@@ -364,6 +380,25 @@ void draw_steering_arrow(cv::Mat &map, float steering_rad) {
 		map, origin, end, cv::Scalar(0, 128, 255), 4, cv::LINE_AA, 0, 0.20);
 }
 
+void draw_heading_arrow(cv::Mat &map, float relative_heading_rad,
+	const cv::Scalar &color, float length_px, const std::string &label) {
+
+	const cv::Point origin(
+		static_cast<int>(ORIGIN.x), static_cast<int>(ORIGIN.y));
+
+	// OTOS heading is positive counter-clockwise. In the robot view +Y points
+	// upward and +X points right, so positive relative heading points left.
+	const int dx =
+		static_cast<int>(-std::sin(relative_heading_rad) * length_px);
+	const int dy =
+		static_cast<int>(-std::cos(relative_heading_rad) * length_px);
+	const cv::Point end = origin + cv::Point(dx, dy);
+
+	cv::arrowedLine(map, origin, end, color, 2, cv::LINE_AA, 0, 0.18);
+	cv::putText(map, label, end + cv::Point(6, -6), cv::FONT_HERSHEY_SIMPLEX,
+		0.42, color, 1, cv::LINE_AA);
+}
+
 // =============================================================================
 // FRONT DISTANCE
 // =============================================================================
@@ -442,177 +477,142 @@ void draw_debug_panel(cv::Mat &map, const lidar::ProcessedLidarData &processed,
 	const navigation::NavigationResult &nav,
 	const navigation::NavigationState &state, float heading_rad,
 	float speed_mps, float wall_correction_rad, float target_outer_distance_m,
-	float turn_trigger_distance_m, std::uint64_t frame_diff_us,
-	std::int64_t process_us) {
+	float turn_trigger_distance_m, float max_steering_rad, int total_turns,
+	std::uint64_t frame_diff_us, std::int64_t process_us) {
 
-	const std::string mode = mode_to_string(state.mode);
+	const cv::Scalar white(235, 235, 235);
+	const cv::Scalar dim(150, 150, 150);
+	const cv::Scalar cyan(255, 255, 0);
+	const cv::Scalar orange(0, 155, 255);
+	const cv::Scalar magenta(255, 0, 255);
+	const cv::Scalar green(70, 255, 70);
+	const cv::Scalar yellow(0, 255, 255);
 
-	const std::string direction = direction_to_string(state.direction);
+	cv::rectangle(map, {WORLD_VIEW_WIDTH + 2, 0}, {MAP_WIDTH, MAP_HEIGHT},
+		cv::Scalar(12, 12, 16), -1);
 
-	const std::string outer = expected_outer_string(state.direction);
+	int x = WORLD_VIEW_WIDTH + 20;
+	int y = 30;
+	constexpr int DY = 24;
 
-	const float cte = nav.debug.distance_error_m;
-
-	const float steering = nav.command.steering_rad;
-
-	const auto front_distance = get_front_distance(processed);
-
-	const std::string front =
-		front_distance ? fixed(*front_distance, 3) + "m" : "NONE";
-
-	const std::string check = sign_check(nav, state.mode);
-
-	const std::string cte_expected = cte_to_string(cte);
-
-	const std::string steering_direction = steering_to_string(steering);
-
-	int x = 20;
-
-	int y = 28;
-
-	constexpr int DY = 25;
-
-	auto text = [&](const std::string &s, const cv::Scalar &color) {
-		cv::putText(map, s, cv::Point(x, y), cv::FONT_HERSHEY_SIMPLEX, 0.52,
-			color, 1, cv::LINE_AA);
-
+	auto text = [&](const std::string &s,
+					const cv::Scalar &color = cv::Scalar(235, 235, 235),
+					float scale = 0.49f, int thickness = 1) {
+		cv::putText(map, s, {x, y}, cv::FONT_HERSHEY_SIMPLEX, scale, color,
+			thickness, cv::LINE_AA);
 		y += DY;
 	};
 
-	// ---------------------------------------------------------
-	// Navigation mode
-	// ---------------------------------------------------------
+	auto section = [&](const std::string &title) {
+		y += 7;
+		text(title, cv::Scalar(110, 190, 255), 0.43f, 1);
+		cv::line(map, {x, y - 17}, {MAP_WIDTH - 18, y - 17},
+			cv::Scalar(55, 55, 65), 1);
+	};
 
-	text("MODE: " + mode,
-		state.mode == navigation::NavigationMode::NORMAL
-			? cv::Scalar(0, 255, 0)
-			: cv::Scalar(0, 255, 255));
-
-	// ---------------------------------------------------------
-	// Direction
-	// ---------------------------------------------------------
-
-	text("DIRECTION: " + direction, cv::Scalar(255, 255, 255));
-
-	// ---------------------------------------------------------
-	// Outer wall mapping
-	// ---------------------------------------------------------
-
-	text("OUTER EXPECT: " + outer +
-			"   VALID: " + (nav.debug.outer_wall_valid ? "YES" : "NO"),
-		cv::Scalar(255, 0, 255));
-
-	// ---------------------------------------------------------
-	// Outer distance
-	// ---------------------------------------------------------
-
-	text("OUTER DIST: " + fixed(nav.debug.outer_distance_m, 3) +
-			"m   TARGET: " + fixed(target_outer_distance_m, 3) + "m",
-		cv::Scalar(255, 255, 255));
-
-	// ---------------------------------------------------------
-	// Cross track
-	// ---------------------------------------------------------
-
-	text("CTE: " + fixed(cte, 3) + "m   CTE EXPECT: " + cte_expected,
-		cte > 0.0f ? cv::Scalar(0, 200, 255) : cv::Scalar(255, 200, 0));
-
-	// ---------------------------------------------------------
-	// Wall heading
-	// ---------------------------------------------------------
-
-	text("WALL ERR: " + fixed(nav.debug.angle_error_rad * RAD_TO_DEG, 2) +
-			" deg",
-		cv::Scalar(255, 255, 255));
-
-	// ---------------------------------------------------------
-	// Stanley steering
-	// ---------------------------------------------------------
-
-	text("STEERING: " + fixed(steering, 3) + " rad / " +
-			fixed(steering * RAD_TO_DEG, 1) + " deg   => " + steering_direction,
-		cv::Scalar(0, 128, 255));
-
-	text("RAW STEER: " + fixed(nav.debug.raw_steering_rad * RAD_TO_DEG, 1) +
-			" deg   FF: " +
-			fixed(nav.debug.turn_feedforward_rad * RAD_TO_DEG, 1) + " deg",
-		cv::Scalar(0, 160, 220));
-
-	// ---------------------------------------------------------
-	// CTE sign check
-	// ---------------------------------------------------------
-
-	const cv::Scalar check_color = check == "PASS" ? cv::Scalar(0, 255, 0)
-		: check == "CHECK"						   ? cv::Scalar(0, 0, 255)
-												   : cv::Scalar(150, 150, 150);
-
-	text("CTE -> STEERING SIGN CHECK: " + check, check_color);
-
-	// ---------------------------------------------------------
-	// Front
-	// ---------------------------------------------------------
-
+	const auto front_distance = get_front_distance(processed);
+	const std::string front =
+		front_distance ? fixed(*front_distance, 3) + " m" : "NONE";
 	const float effective_trigger_m = nav.debug.effective_turn_trigger_m > 0.0f
 		? nav.debug.effective_turn_trigger_m
 		: turn_trigger_distance_m;
+	const std::string check = sign_check(nav, state.mode);
+	const cv::Scalar mode_color =
+		state.mode == navigation::NavigationMode::NORMAL	? green
+		: state.mode == navigation::NavigationMode::TURNING ? orange
+															: yellow;
+	const cv::Scalar check_color = check == "PASS" ? green
+		: check == "CHECK"						   ? cv::Scalar(60, 60, 255)
+												   : dim;
 
-	text("FRONT: " + front +
-			"   TURN TRIGGER: " + fixed(effective_trigger_m, 2) + "m",
-		cv::Scalar(0, 255, 255));
+	text("NAVIGATION CONTROLLER", white, 0.62f, 2);
+	text("MONITOR ONLY - ACTUATORS DISCONNECTED", cv::Scalar(80, 80, 255),
+		0.43f, 1);
 
-	// ---------------------------------------------------------
-	// OTOS heading
-	// ---------------------------------------------------------
+	section("STATE");
+	text("MODE       " + mode_to_string(state.mode), mode_color, 0.57f, 2);
+	text("DIRECTION  " + direction_to_string(state.direction), white);
+	text("NEXT TURN  " + turn_direction_to_string(state.direction) +
+			"   ARMED " + (state.turn_armed ? "YES" : "NO"),
+		state.turn_armed ? green : dim);
+	text("TURN " + std::to_string(state.turn_count) + "/" +
+			std::to_string(total_turns) + "   LAP " +
+			std::to_string(state.lap) + "   CORNER " +
+			std::to_string(state.corner_index),
+		white);
+	text("HEADING CONFIRM FRAMES  " +
+			std::to_string(state.heading_confirm_frames),
+		dim);
 
-	text("OTOS H: " + fixed(heading_rad * RAD_TO_DEG, 1) + " deg   TARGET H: " +
+	section("STEERING  (positive = RIGHT)");
+	text("OUTPUT  " + fixed(nav.command.steering_rad * RAD_TO_DEG, 1) +
+			" deg  " + steering_to_string(nav.command.steering_rad),
+		orange, 0.58f, 2);
+	text("RAW     " + fixed(nav.debug.raw_steering_rad * RAD_TO_DEG, 1) +
+			" deg   FF " +
+			fixed(nav.debug.turn_feedforward_rad * RAD_TO_DEG, 1) + " deg",
+		white);
+	text("LIMIT   +/-" + fixed(max_steering_rad * RAD_TO_DEG, 1) +
+			" deg   SERVO OFF",
+		dim);
+
+	section("HEADING  (OTOS positive = CCW)");
+	text("CURRENT " + fixed(heading_rad * RAD_TO_DEG, 1) + " deg   TARGET " +
 			fixed(state.target_heading_rad * RAD_TO_DEG, 1) + " deg",
-		cv::Scalar(255, 255, 255));
-
-	// ---------------------------------------------------------
-	// Turning heading error
-	// ---------------------------------------------------------
-
-	text("TURN ERR: " + fixed(nav.debug.heading_error_rad * RAD_TO_DEG, 1) +
-			" deg   TRACK: " +
-			fixed(nav.debug.heading_tracking_error_rad * RAD_TO_DEG, 1) +
+		white);
+	if (state.mode == navigation::NavigationMode::TURNING) {
+		text("MOVING REF " +
+				fixed(nav.debug.turn_reference_heading_rad * RAD_TO_DEG, 1) +
+				" deg   TRACK ERR " +
+				fixed(nav.debug.heading_tracking_error_rad * RAD_TO_DEG, 1) +
+				" deg",
+			cyan);
+	} else {
+		text("MOVING REF --   TRACK ERR --", dim);
+	}
+	text("TURN ERR " + fixed(nav.debug.heading_error_rad * RAD_TO_DEG, 1) +
+			" deg   PROGRESS " + fixed(nav.debug.turn_progress * 100.0f, 0) +
+			"%",
+		white);
+	text("LIDAR HEADING CORR  " + fixed(wall_correction_rad * RAD_TO_DEG, 1) +
 			" deg",
-		cv::Scalar(255, 255, 255));
+		dim);
 
-	text("TURN PROGRESS: " + fixed(nav.debug.turn_progress * 100.0f, 0) +
-			"%   CORNER SPEED: " + fixed(nav.debug.corner_speed_mps, 2) +
+	section("SPEED PROFILE");
+	text("OTOS " + fixed(speed_mps, 2) + " m/s   OUTPUT " +
+			fixed(nav.command.target_speed_mps, 2) + " m/s",
+		white);
+	text("RAW TARGET " + fixed(nav.debug.raw_target_speed_mps, 2) +
+			" m/s   CORNER CAP " + fixed(nav.debug.corner_speed_mps, 2) +
 			" m/s",
-		cv::Scalar(255, 255, 255));
+		white);
+	text("MOTOR OUTPUT OFF", dim);
 
-	// ---------------------------------------------------------
-	// Speed
-	// ---------------------------------------------------------
+	section("LIDAR / WALL FOLLOWING");
+	text("OUTER " + expected_outer_string(state.direction) + "   VALID " +
+			(nav.debug.outer_wall_valid ? "YES" : "NO"),
+		nav.debug.outer_wall_valid ? magenta : cv::Scalar(60, 60, 255));
+	text("DIST " + fixed(nav.debug.outer_distance_m, 3) + " m   TARGET " +
+			fixed(target_outer_distance_m, 3) + " m",
+		white);
+	text("CTE " + fixed(nav.debug.distance_error_m, 3) + " m  " +
+			cte_to_string(nav.debug.distance_error_m) + "   WALL ERR " +
+			fixed(nav.debug.angle_error_rad * RAD_TO_DEG, 1) + " deg",
+		white);
+	text("SIGN CHECK  " + check, check_color);
+	text("FRONT " + front + "   VALID " +
+			(nav.debug.front_wall_valid ? "YES" : "NO"),
+		nav.debug.front_wall_valid ? yellow : dim);
+	text("DYNAMIC TURN TRIGGER  " + fixed(effective_trigger_m, 3) + " m",
+		yellow);
 
-	text("OTOS SPEED: " + fixed(speed_mps, 2) + " m/s   NAV TARGET: " +
-			fixed(nav.command.target_speed_mps, 2) + " m/s [NOT ACTUATED]",
-		cv::Scalar(120, 120, 120));
-
-	// ---------------------------------------------------------
-	// Wall correction
-	// ---------------------------------------------------------
-
-	text("LIDAR HEADING CORR: " + fixed(wall_correction_rad * RAD_TO_DEG, 1) +
-			" deg",
-		cv::Scalar(120, 120, 120));
-
-	// ---------------------------------------------------------
-	// Progress
-	// ---------------------------------------------------------
-
-	text("TURN: " + std::to_string(state.turn_count) +
-			"   LAP: " + std::to_string(state.lap) +
-			"   CORNER: " + std::to_string(state.corner_index),
-		cv::Scalar(255, 255, 255));
-
-	text("FRAME: " + fixed(static_cast<float>(frame_diff_us) / 1000.0f, 1) +
-			"ms   PROCESS: " +
-			fixed(static_cast<float>(process_us) / 1000.0f, 2) +
-			"ms   NAV DT: " + fixed(nav.debug.update_dt_s * 1000.0f, 1) + "ms",
-		cv::Scalar(120, 120, 120));
+	section("TIMING");
+	text("FRAME " + fixed(static_cast<float>(frame_diff_us) / 1000.0f, 1) +
+			" ms   PROCESS " +
+			fixed(static_cast<float>(process_us) / 1000.0f, 2) + " ms",
+		dim);
+	text("CONTROLLER DT  " + fixed(nav.debug.update_dt_s * 1000.0f, 1) + " ms",
+		dim);
 }
 
 } // namespace
@@ -893,7 +893,6 @@ int main() {
 
 		const auto processed =
 			lidar_processor.process(scan, wall_correction_rad,
-
 				4,		// min_segment_point
 				0.035f, // max_line_error_m
 				0.12f,	// max_point_gap_m
@@ -977,12 +976,24 @@ int main() {
 		// Visualization only.
 		// Absolutely no servo command is sent.
 		draw_steering_arrow(debug_map, nav_result.command.steering_rad);
+		draw_heading_arrow(debug_map,
+			normalize_angle(state.target_heading_rad - heading_rad),
+			cv::Scalar(255, 0, 255), 145.0f, "TARGET H");
+
+		if (state.mode == navigation::NavigationMode::TURNING) {
+			draw_heading_arrow(debug_map,
+				normalize_angle(
+					nav_result.debug.turn_reference_heading_rad - heading_rad),
+				cv::Scalar(255, 255, 0), 120.0f, "MOVING REF");
+		}
 
 		draw_debug_panel(debug_map, processed, nav_result, state, heading_rad,
 			speed_mps, wall_correction_rad, nav_config.target_outer_distance_m,
-			nav_config.turn_trigger_distance_m, frame_diff_us, process_us);
+			nav_config.turn_trigger_distance_m,
+			nav_config.stanley.max_steering_rad, nav_config.total_turns,
+			frame_diff_us, process_us);
 
-		cv::imshow("NavigationController TEST - NO ACTUATORS", debug_map);
+		cv::imshow("NavigationController Dashboard - NO ACTUATORS", debug_map);
 
 		// ---------------------------------------------------------------------
 		// KEY

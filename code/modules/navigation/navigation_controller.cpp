@@ -52,6 +52,7 @@ NavigationResult NavigationController::update(
 	}
 
 	result.debug.raw_steering_rad = result.command.steering_rad;
+	result.debug.raw_target_speed_mps = result.command.target_speed_mps;
 	result.debug.corner_speed_mps = calculate_corner_speed_mps();
 	result.debug.update_dt_s = dt_s;
 
@@ -269,6 +270,7 @@ NavigationCommand NavigationController::update_turning(
 
 	debug.heading_error_rad = heading_error_rad;
 	debug.heading_tracking_error_rad = tracking_error_rad;
+	debug.turn_reference_heading_rad = turn_reference_heading_rad_;
 	debug.turn_progress = turn_total_angle_rad_ > 1e-6f
 		? std::clamp(
 			  turn_reference_progress_rad_ / turn_total_angle_rad_, 0.0f, 1.0f)
