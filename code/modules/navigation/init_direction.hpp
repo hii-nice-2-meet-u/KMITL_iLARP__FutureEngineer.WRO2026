@@ -24,7 +24,7 @@ struct InitialDirectionConfig {
 	float max_perpendicular_error_rad{
 		15.0f * static_cast<float>(M_PI) / 180.0f};
 
-	float max_connection_gap_m{0.25f};
+	float max_connection_gap_m{0.35f};
 
 	float min_candidate_length_m{0.15f};
 

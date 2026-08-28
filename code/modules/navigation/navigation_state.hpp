@@ -10,10 +10,10 @@ namespace navigation {
 enum class NavigationMode { SEARCH_DIRECTION, NORMAL, TURNING, FINISHED };
 
 struct NavigationCommand {
-	// Normalized command
-	// speed:    0 -> stop, 100 -> max forward
-	// steering: 1000.0 -> left, 2100.0 -> right
-	float speed{0.0f};
+	// SI-unit setpoints for the downstream actuator controller.
+	// speed: non-negative forward speed [m/s]
+	// steering: negative = left, positive = right [rad]
+	float target_speed_mps{0.0f};
 	float steering_rad{0.0f};
 };
 
@@ -27,6 +27,15 @@ struct NavigationDebug {
 
 	// Turning
 	float heading_error_rad{0.0f};
+	float heading_tracking_error_rad{0.0f};
+	float turn_progress{0.0f};
+	float turn_feedforward_rad{0.0f};
+
+	// Command shaping
+	float raw_steering_rad{0.0f};
+	float corner_speed_mps{0.0f};
+	float effective_turn_trigger_m{0.0f};
+	float update_dt_s{0.0f};
 
 	bool outer_wall_valid{false};
 	bool front_wall_valid{false};

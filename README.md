@@ -233,6 +233,47 @@ The motion controller converts navigation outputs into actuator commands.
 - Speed regulation
 - Stability correction loop
 
+### Smooth High-Speed Cornering
+
+The Open Challenge controller follows the outer wall on each straight with a
+Stanley controller, then follows a geometric 90-degree heading trajectory at a
+corner. It does not command the final heading immediately. Instead, it advances
+a moving reference at `yaw_rate = speed / corner_radius` and combines heading
+feedback with Ackermann feed-forward:
+
+```text
+feed_forward_steering = atan(wheelbase / corner_radius)
+corner_speed_limit    = sqrt(max_lateral_acceleration * corner_radius)
+```
+
+The current track baseline uses a 0.40 m vehicle-path radius: the field's
+0.10 m outer-wall corner radius plus the 0.30 m wall-following offset. Steering
+is blended over the first 10 degrees and final 22 degrees of a corner. A
+35 ms low-pass filter, a 7 rad/s steering slew limit, acceleration limits, and
+a two-frame speed-preview trigger prevent step commands and LiDAR-induced
+jitter. The current no-actuator test profile requests 0.85 m/s on a straight,
+0.72 m/s on approach, and 0.65 m/s through the corner.
+
+`wheelbase_m` is currently a documented 0.18 m assumption. The team must
+measure rear-axle-center to front-axle-center distance on the final chassis and
+update this value before physical track tuning. `test_lidar` only visualizes
+navigation outputs; it intentionally sends no motor or servo commands.
+
+A deterministic kinematic-bicycle simulation covers both clockwise and
+counter-clockwise turns:
+
+```bash
+cmake -S code -B build -DILARP_BUILD_TESTS=ON
+cmake --build build --target navigation_corner_sim_test
+ctest --test-dir build --output-on-failure
+```
+
+The simulation checks direction, turn convergence, steering sign, physical
+steering limit, non-saturation of the nominal raw command, slew rate, final
+heading error, and minimum mid-corner speed. Real-track tuning must still log
+lap time, minimum wall clearance, peak heading error, and intervention rate;
+speed should only be raised when all clearance runs pass.
+
 Documentation: `docs/software/README.md` (motion-control layer — planned, see roadmap)
 
 ---

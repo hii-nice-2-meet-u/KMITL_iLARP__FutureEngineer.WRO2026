@@ -172,12 +172,6 @@ const lidar::LineSegment *InitialDirectionEstimator::find_perpendicular_wall(
 
 	const cv::Point2f forward = forward_endpoint(side_wall);
 
-	const cv::Point2f side_center = (side_wall.start + side_wall.end) * 0.5f;
-
-	const bool right_side = side_center.x > 0.0f;
-
-	const bool left_side = side_center.x < 0.0f;
-
 	const lidar::LineSegment *best = nullptr;
 
 	float best_gap = std::numeric_limits<float>::max();

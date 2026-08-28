@@ -17,6 +17,7 @@ NavigationResult NavigationController::update(
 	float speed_mps) {
 
 	NavigationResult result;
+	const float dt_s = calculate_dt_s(lidar_data.timestamp_us);
 
 	switch (state_.mode) {
 
@@ -29,14 +30,15 @@ NavigationResult NavigationController::update(
 
 	case NavigationMode::NORMAL:
 
-		result.command =
-			update_normal(lidar_data, heading_rad, speed_mps, result.debug);
+		result.command = update_normal(
+			lidar_data, heading_rad, speed_mps, dt_s, result.debug);
 
 		break;
 
 	case NavigationMode::TURNING:
 
-		result.command = update_turning(heading_rad, result.debug);
+		result.command =
+			update_turning(heading_rad, speed_mps, dt_s, result.debug);
 
 		break;
 
@@ -48,6 +50,13 @@ NavigationResult NavigationController::update(
 
 		break;
 	}
+
+	result.debug.raw_steering_rad = result.command.steering_rad;
+	result.debug.corner_speed_mps = calculate_corner_speed_mps();
+	result.debug.update_dt_s = dt_s;
+
+	result.command = condition_command(
+		result.command, dt_s, state_.mode == NavigationMode::FINISHED);
 
 	return result;
 }
@@ -63,6 +72,21 @@ void NavigationController::reset(float heading_rad) {
 	state_.target_heading_rad = heading_rad;
 
 	direction_estimator_.reset();
+
+	previous_timestamp_us_ = 0;
+
+	turn_start_heading_rad_ = heading_rad;
+	turn_reference_heading_rad_ = heading_rad;
+	turn_reference_progress_rad_ = 0.0f;
+	turn_total_angle_rad_ = 0.0f;
+	turn_heading_sign_ = 0.0f;
+	turn_entry_steering_rad_ = 0.0f;
+
+	turn_trigger_frames_ = 0;
+
+	conditioned_steering_rad_ = 0.0f;
+	conditioned_speed_mps_ = 0.0f;
+	command_conditioner_initialized_ = false;
 }
 
 // SEARCH DIRECTION
@@ -105,7 +129,7 @@ NavigationCommand NavigationController::update_search_direction(
 
 NavigationCommand NavigationController::update_normal(
 	const lidar::ProcessedLidarData &lidar_data, float heading_rad,
-	float speed_mps, NavigationDebug &debug) {
+	float speed_mps, float dt_s, NavigationDebug &debug) {
 
 	NavigationCommand command;
 
@@ -122,6 +146,7 @@ NavigationCommand NavigationController::update_normal(
 				config_.turn_rearm_distance_m) {
 
 			state_.turn_armed = true;
+			turn_trigger_frames_ = 0;
 		}
 	}
 
@@ -129,11 +154,11 @@ NavigationCommand NavigationController::update_normal(
 	// Start turn
 	// ---------------------------------------------------------
 
-	if (should_start_turn(lidar_data.walls)) {
+	if (should_start_turn(lidar_data.walls, speed_mps, debug)) {
 
 		start_turn(heading_rad);
 
-		return update_turning(heading_rad, debug);
+		return update_turning(heading_rad, speed_mps, dt_s, debug);
 	}
 
 	// ---------------------------------------------------------
@@ -195,7 +220,11 @@ NavigationCommand NavigationController::update_normal(
 
 		if (front_distance < config_.approach_distance_m) {
 
-			command.target_speed_mps = config_.approach_speed_mps;
+			const float effective_trigger =
+				calculate_effective_turn_trigger_m(speed_mps);
+
+			command.target_speed_mps =
+				calculate_approach_speed_mps(front_distance, effective_trigger);
 		}
 	}
 
@@ -205,11 +234,28 @@ NavigationCommand NavigationController::update_normal(
 // TURNING
 
 NavigationCommand NavigationController::update_turning(
-	float heading_rad, NavigationDebug &debug) {
+	float heading_rad, float speed_mps, float dt_s, NavigationDebug &debug) {
 
 	NavigationCommand command;
 
-	command.target_speed_mps = config_.turning_speed_mps;
+	const float radius_m = std::max(0.05f, config_.corner_radius_m);
+	const float corner_speed_mps = calculate_corner_speed_mps();
+
+	const float measured_speed_mps =
+		std::isfinite(speed_mps) ? std::abs(speed_mps) : 0.0f;
+	const float reference_speed_mps =
+		std::max(measured_speed_mps, std::min(corner_speed_mps, 0.25f));
+
+	const float remaining_reference_rad =
+		std::max(0.0f, turn_total_angle_rad_ - turn_reference_progress_rad_);
+
+	const float reference_step_rad = std::min(
+		remaining_reference_rad, reference_speed_mps / radius_m * dt_s);
+
+	turn_reference_progress_rad_ += reference_step_rad;
+
+	turn_reference_heading_rad_ = normalize_angle(turn_start_heading_rad_ +
+		turn_heading_sign_ * turn_reference_progress_rad_);
 
 	// ---------------------------------------------------------
 	// OTOS heading error
@@ -218,8 +264,15 @@ NavigationCommand NavigationController::update_turning(
 	// ---------------------------------------------------------
 
 	const float heading_error_rad = calculate_turn_heading_error(heading_rad);
+	const float tracking_error_rad =
+		normalize_angle(turn_reference_heading_rad_ - heading_rad);
 
 	debug.heading_error_rad = heading_error_rad;
+	debug.heading_tracking_error_rad = tracking_error_rad;
+	debug.turn_progress = turn_total_angle_rad_ > 1e-6f
+		? std::clamp(
+			  turn_reference_progress_rad_ / turn_total_angle_rad_, 0.0f, 1.0f)
+		: 1.0f;
 
 	// ---------------------------------------------------------
 	// Convert heading error to our steering convention:
@@ -228,11 +281,45 @@ NavigationCommand NavigationController::update_turning(
 	// steering > 0 = RIGHT
 	// ---------------------------------------------------------
 
-	const float steering_error =
-		heading_error_rad * config_.heading_to_steering_sign;
+	const float entry_weight = config_.turn_entry_blend_rad > 1e-6f
+		? smoothstep(
+			  turn_reference_progress_rad_ / config_.turn_entry_blend_rad)
+		: 1.0f;
 
-	command.steering_rad =
-		clamp_steering(config_.turn_heading_kp * steering_error);
+	const float remaining_after_step_rad =
+		std::max(0.0f, turn_total_angle_rad_ - turn_reference_progress_rad_);
+
+	const float exit_weight = config_.turn_exit_blend_rad > 1e-6f
+		? smoothstep(remaining_after_step_rad / config_.turn_exit_blend_rad)
+		: 1.0f;
+
+	const float feedforward_magnitude_rad =
+		std::atan2(std::max(0.01f, config_.wheelbase_m), radius_m);
+
+	const float feedforward_rad = config_.heading_to_steering_sign *
+		turn_heading_sign_ * feedforward_magnitude_rad *
+		std::min(entry_weight, exit_weight);
+
+	const float entry_steering_rad =
+		turn_entry_steering_rad_ * (1.0f - entry_weight);
+
+	const float tracking_steering_rad = config_.turn_heading_kp *
+		tracking_error_rad * config_.heading_to_steering_sign;
+
+	debug.turn_feedforward_rad = feedforward_rad;
+
+	command.steering_rad = clamp_steering(
+		entry_steering_rad + feedforward_rad + tracking_steering_rad);
+
+	const float exit_acceleration_weight =
+		config_.exit_acceleration_blend_rad > 1e-6f ? 1.0f -
+			smoothstep(std::abs(heading_error_rad) /
+				config_.exit_acceleration_blend_rad)
+													: 0.0f;
+
+	command.target_speed_mps = corner_speed_mps +
+		(config_.normal_speed_mps - corner_speed_mps) *
+			exit_acceleration_weight;
 
 	// ---------------------------------------------------------
 	// Check turn complete
@@ -264,10 +351,7 @@ NavigationCommand NavigationController::update_turning(
 		// Do not allow immediate retrigger from
 		// the wall belonging to the old corner.
 		state_.turn_armed = false;
-
-		command.steering_rad = 0.0f;
-
-		command.target_speed_mps = config_.approach_speed_mps;
+		turn_trigger_frames_ = 0;
 	}
 
 	return command;
@@ -401,23 +485,37 @@ float NavigationController::calculate_wall_heading_error(
 
 // TURN TRIGGER
 
-bool NavigationController::should_start_turn(
-	const lidar::ResolvedWalls &walls) const {
+bool NavigationController::should_start_turn(const lidar::ResolvedWalls &walls,
+	float speed_mps, NavigationDebug &debug) {
 
 	if (!state_.direction.has_value()) {
+		turn_trigger_frames_ = 0;
 		return false;
 	}
 
 	if (!state_.turn_armed) {
+		turn_trigger_frames_ = 0;
 		return false;
 	}
 
 	if (!walls.front.has_value()) {
+		turn_trigger_frames_ = 0;
 		return false;
 	}
 
-	return walls.front->perpendicular_distance() <=
-		config_.turn_trigger_distance_m;
+	const float effective_trigger_m =
+		calculate_effective_turn_trigger_m(speed_mps);
+
+	debug.effective_turn_trigger_m = effective_trigger_m;
+
+	if (walls.front->perpendicular_distance() <= effective_trigger_m) {
+		++turn_trigger_frames_;
+	} else {
+		turn_trigger_frames_ = 0;
+	}
+
+	return turn_trigger_frames_ >=
+		std::max(1, config_.turn_trigger_confirm_frames);
 }
 
 // START TURN
@@ -439,7 +537,28 @@ void NavigationController::start_turn(float heading_rad) {
 		heading_delta = config_.counter_clockwise_turn_delta_rad;
 	}
 
-	state_.target_heading_rad = normalize_angle(heading_rad + heading_delta);
+	// Advance from the previous straight's cardinal reference, not from the
+	// instantaneous (possibly noisy or slightly misaligned) OTOS heading. This
+	// prevents a few degrees of error from accumulating at every corner.
+	state_.target_heading_rad =
+		normalize_angle(state_.target_heading_rad + heading_delta);
+
+	float signed_turn_angle_rad =
+		normalize_angle(state_.target_heading_rad - heading_rad);
+
+	// Keep the commanded driving direction even close to the +/-pi wrap point.
+	if (heading_delta < 0.0f && signed_turn_angle_rad > 0.0f) {
+		signed_turn_angle_rad -= 2.0f * static_cast<float>(M_PI);
+	} else if (heading_delta > 0.0f && signed_turn_angle_rad < 0.0f) {
+		signed_turn_angle_rad += 2.0f * static_cast<float>(M_PI);
+	}
+
+	turn_start_heading_rad_ = heading_rad;
+	turn_reference_heading_rad_ = heading_rad;
+	turn_reference_progress_rad_ = 0.0f;
+	turn_total_angle_rad_ = std::abs(signed_turn_angle_rad);
+	turn_heading_sign_ = heading_delta >= 0.0f ? 1.0f : -1.0f;
+	turn_entry_steering_rad_ = conditioned_steering_rad_;
 
 	state_.heading_confirm_frames = 0;
 
@@ -459,8 +578,11 @@ float NavigationController::calculate_turn_heading_error(
 // TURN COMPLETE
 
 bool NavigationController::is_turn_complete(float heading_error_rad) {
+	const bool reference_complete =
+		turn_reference_progress_rad_ >= turn_total_angle_rad_ - 1e-5f;
 
-	if (std::abs(heading_error_rad) <= config_.heading_tolerance_rad) {
+	if (reference_complete &&
+		std::abs(heading_error_rad) <= config_.heading_tolerance_rad) {
 
 		++state_.heading_confirm_frames;
 
@@ -469,7 +591,136 @@ bool NavigationController::is_turn_complete(float heading_error_rad) {
 		state_.heading_confirm_frames = 0;
 	}
 
-	return state_.heading_confirm_frames >= config_.heading_confirm_frames;
+	return state_.heading_confirm_frames >=
+		std::max(1, config_.heading_confirm_frames);
+}
+
+// SPEED PROFILE
+
+float NavigationController::calculate_corner_speed_mps() const {
+	const float requested_speed_mps = std::max(0.0f, config_.turning_speed_mps);
+	const float maximum_speed_mps =
+		std::min(requested_speed_mps, std::max(0.0f, config_.normal_speed_mps));
+
+	if (config_.max_lateral_acceleration_mps2 <= 0.0f) {
+		return maximum_speed_mps;
+	}
+
+	const float radius_m = std::max(0.05f, config_.corner_radius_m);
+	const float lateral_limit_mps =
+		std::sqrt(config_.max_lateral_acceleration_mps2 * radius_m);
+
+	return std::min(maximum_speed_mps, lateral_limit_mps);
+}
+
+float NavigationController::calculate_effective_turn_trigger_m(
+	float speed_mps) const {
+	const float safe_speed_mps =
+		std::isfinite(speed_mps) ? std::abs(speed_mps) : 0.0f;
+	const float preview_trigger_m = config_.turn_trigger_distance_m +
+		safe_speed_mps * std::max(0.0f, config_.turn_preview_time_s);
+	const float latest_smooth_entry_m = std::max(
+		config_.turn_trigger_distance_m, config_.approach_distance_m - 0.05f);
+
+	return std::clamp(preview_trigger_m,
+		std::max(0.0f, config_.turn_trigger_distance_m),
+		std::max(0.0f, latest_smooth_entry_m));
+}
+
+float NavigationController::calculate_approach_speed_mps(
+	float front_distance_m, float effective_trigger_m) const {
+	const float corner_speed_mps = calculate_corner_speed_mps();
+	const float approach_distance_m =
+		std::max(config_.approach_distance_m, effective_trigger_m + 1e-3f);
+
+	const float progress = 1.0f -
+		std::clamp((front_distance_m - effective_trigger_m) /
+				(approach_distance_m - effective_trigger_m),
+			0.0f, 1.0f);
+
+	if (progress < 0.5f) {
+		const float weight = smoothstep(progress * 2.0f);
+		return config_.normal_speed_mps +
+			(config_.approach_speed_mps - config_.normal_speed_mps) * weight;
+	}
+
+	const float weight = smoothstep((progress - 0.5f) * 2.0f);
+
+	return config_.approach_speed_mps +
+		(corner_speed_mps - config_.approach_speed_mps) * weight;
+}
+
+// COMMAND CONDITIONING
+
+float NavigationController::calculate_dt_s(std::uint64_t timestamp_us) {
+	float dt_s = config_.nominal_update_period_s;
+
+	if (timestamp_us != 0 && previous_timestamp_us_ != 0 &&
+		timestamp_us > previous_timestamp_us_) {
+		dt_s =
+			static_cast<float>(timestamp_us - previous_timestamp_us_) * 1e-6f;
+	}
+
+	if (timestamp_us != 0) {
+		previous_timestamp_us_ = timestamp_us;
+	}
+
+	const float min_dt_s = std::max(1e-4f, config_.min_update_period_s);
+	const float max_dt_s = std::max(min_dt_s, config_.max_update_period_s);
+
+	return std::clamp(dt_s, min_dt_s, max_dt_s);
+}
+
+NavigationCommand NavigationController::condition_command(
+	const NavigationCommand &command, float dt_s, bool stop_immediately) {
+	if (stop_immediately) {
+		conditioned_speed_mps_ = 0.0f;
+		conditioned_steering_rad_ = 0.0f;
+		command_conditioner_initialized_ = true;
+		return {};
+	}
+
+	if (!command_conditioner_initialized_) {
+		conditioned_speed_mps_ = 0.0f;
+		conditioned_steering_rad_ = 0.0f;
+		command_conditioner_initialized_ = true;
+	}
+
+	const float requested_speed_mps = std::isfinite(command.target_speed_mps)
+		? std::max(0.0f, command.target_speed_mps)
+		: 0.0f;
+	const float speed_delta_mps = requested_speed_mps - conditioned_speed_mps_;
+	const float speed_rate_mps2 = speed_delta_mps >= 0.0f
+		? std::max(0.0f, config_.max_acceleration_mps2)
+		: std::max(0.0f, config_.max_deceleration_mps2);
+	const float max_speed_delta_mps = speed_rate_mps2 * dt_s;
+
+	conditioned_speed_mps_ +=
+		std::clamp(speed_delta_mps, -max_speed_delta_mps, max_speed_delta_mps);
+
+	const float requested_steering_rad = std::isfinite(command.steering_rad)
+		? clamp_steering(command.steering_rad)
+		: 0.0f;
+	const float time_constant_s =
+		std::max(0.0f, config_.steering_filter_time_constant_s);
+	const float filter_weight =
+		time_constant_s <= 1e-6f ? 1.0f : dt_s / (time_constant_s + dt_s);
+	const float filtered_target_rad = conditioned_steering_rad_ +
+		(requested_steering_rad - conditioned_steering_rad_) * filter_weight;
+	const float max_steering_delta_rad =
+		std::max(0.0f, config_.max_steering_rate_rad_s) * dt_s;
+
+	conditioned_steering_rad_ +=
+		std::clamp(filtered_target_rad - conditioned_steering_rad_,
+			-max_steering_delta_rad, max_steering_delta_rad);
+	conditioned_steering_rad_ = clamp_steering(conditioned_steering_rad_);
+
+	return {conditioned_speed_mps_, conditioned_steering_rad_};
+}
+
+float NavigationController::smoothstep(float value) {
+	const float x = std::clamp(value, 0.0f, 1.0f);
+	return x * x * (3.0f - 2.0f * x);
 }
 
 // SEARCH CENTERING
