@@ -86,7 +86,7 @@ int main() {
 	}
 
 	const uint8_t command[]{0xa0, 0x00, 0x00};
-	const uint8_t dummy[]{0xa0, 0x00, 0x00};
+	const uint8_t dummy[]{0x00, 0x00, 0x00};
 
 	while (true) {
 

@@ -40,9 +40,13 @@ struct NavigationDebug {
 	float corner_speed_mps{0.0f};
 	float effective_turn_trigger_m{0.0f};
 	float update_dt_s{0.0f};
+	float map_distance_to_corner_m{0.0f};
+	float map_confidence{0.0f};
 
 	bool outer_wall_valid{false};
 	bool front_wall_valid{false};
+	bool map_preview_valid{false};
+	bool map_approach_active{false};
 };
 
 struct NavigationState {

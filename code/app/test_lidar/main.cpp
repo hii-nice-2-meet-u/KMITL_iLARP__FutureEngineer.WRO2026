@@ -13,6 +13,7 @@
 #include "lidar_processor.hpp"
 #include "navigation_controller.hpp"
 #include "otos.hpp"
+#include "track_map.hpp"
 
 namespace {
 
@@ -478,6 +479,8 @@ void draw_debug_panel(cv::Mat &map, const lidar::ProcessedLidarData &processed,
 	const navigation::NavigationState &state, float heading_rad,
 	float speed_mps, float wall_correction_rad, float target_outer_distance_m,
 	float turn_trigger_distance_m, float max_steering_rad, int total_turns,
+	const navigation::TrackMap &track_map,
+	const std::optional<navigation::ReplayHint> &replay_hint,
 	std::uint64_t frame_diff_us, std::int64_t process_us) {
 
 	const cv::Scalar white(235, 235, 235);
@@ -543,6 +546,20 @@ void draw_debug_panel(cv::Mat &map, const lidar::ProcessedLidarData &processed,
 	text("HEADING CONFIRM FRAMES  " +
 			std::to_string(state.heading_confirm_frames),
 		dim);
+	text("MAP  " +
+			(track_map.ready_for_replay() ? std::string("REPLAY READY")
+										  : std::string("LEARN ") +
+						std::to_string(track_map.learned_corner_count()) +
+						"/4"),
+		track_map.ready_for_replay() ? green : yellow);
+	if (replay_hint.has_value()) {
+		text("NEXT MAP CORNER " + std::to_string(replay_hint->corner_index) +
+				"   DIST " + fixed(replay_hint->distance_to_entry_m, 2) + " m" +
+				(replay_hint->approach_recommended ? "   PREVIEW" : ""),
+			replay_hint->approach_recommended ? orange : dim);
+	} else {
+		text("NEXT MAP CORNER  --", dim);
+	}
 
 	section("STEERING  (positive = RIGHT)");
 	text("OUTPUT  " + fixed(nav.command.steering_rad * RAD_TO_DEG, 1) +
@@ -666,6 +683,7 @@ int main() {
 	nav_config.speed_pid.kd = 0.04f;
 
 	navigation::NavigationController navigation(nav_config);
+	navigation::TrackMap track_map;
 
 	// =========================================================================
 	// LIDAR
@@ -834,6 +852,40 @@ int main() {
 				.count();
 
 		const auto &state = navigation.state();
+		const navigation::MapPose map_pose{pos.x, pos.y, heading_rad};
+
+		if (state.direction.has_value()) {
+			track_map.set_direction(*state.direction);
+		}
+
+		// Lap 1 learns the four corner entry/exit landmarks from OTOS. Later
+		// successful laps refine them with a small moving-average update.
+		if (previous_mode != navigation::NavigationMode::TURNING &&
+			state.mode == navigation::NavigationMode::TURNING) {
+			const float learned_trigger_m =
+				nav_result.debug.effective_turn_trigger_m > 0.0f
+				? nav_result.debug.effective_turn_trigger_m
+				: nav_config.turn_trigger_distance_m;
+			track_map.record_corner_entry(state.corner_index,
+				{map_pose, learned_trigger_m, nav_config.corner_radius_m,
+					nav_result.command.target_speed_mps});
+			std::cout << "[MAP] learned corner " << state.corner_index
+					  << " entry at (" << pos.x << ", " << pos.y << ")\n";
+		}
+
+		if (previous_mode == navigation::NavigationMode::TURNING &&
+			state.mode != navigation::NavigationMode::TURNING) {
+			const std::size_t completed_corner =
+				(state.corner_index + navigation::TRACK_CORNER_COUNT - 1) %
+				navigation::TRACK_CORNER_COUNT;
+			track_map.record_corner_exit(completed_corner, map_pose);
+			std::cout << "[MAP] learned corner " << completed_corner
+					  << " exit; map " << track_map.learned_corner_count()
+					  << "/4\n";
+		}
+
+		const auto replay_hint =
+			track_map.replay_hint(map_pose, state.corner_index);
 
 		// ---------------------------------------------------------------------
 		// MODE TRANSITION LOG
@@ -909,7 +961,7 @@ int main() {
 			speed_mps, wall_correction_rad, nav_config.target_outer_distance_m,
 			nav_config.turn_trigger_distance_m,
 			nav_config.stanley.max_steering_rad, nav_config.total_turns,
-			frame_diff_us, process_us);
+			track_map, replay_hint, frame_diff_us, process_us);
 
 		cv::imshow("NavigationController Dashboard - NO ACTUATORS", debug_map);
 
@@ -927,6 +979,7 @@ int main() {
 		if (key == 'r' || key == 'R') {
 
 			navigation.reset(heading_rad);
+			track_map.reset();
 
 			previous_mode = navigation.state().mode;
 

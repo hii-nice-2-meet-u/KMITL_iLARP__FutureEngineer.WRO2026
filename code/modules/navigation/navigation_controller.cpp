@@ -15,7 +15,7 @@ NavigationController::NavigationController(
 
 NavigationResult NavigationController::update(
 	const lidar::ProcessedLidarData &lidar_data, float heading_rad,
-	float speed_mps) {
+	float speed_mps, const std::optional<ReplayHint> &replay_hint) {
 
 	NavigationResult result;
 	const float dt_s = calculate_dt_s(lidar_data.timestamp_us);
@@ -31,8 +31,8 @@ NavigationResult NavigationController::update(
 
 	case NavigationMode::NORMAL:
 
-		result.command = update_normal(
-			lidar_data, heading_rad, speed_mps, dt_s, result.debug);
+		result.command = update_normal(lidar_data, heading_rad, speed_mps, dt_s,
+			replay_hint, result.debug);
 
 		break;
 
@@ -137,7 +137,8 @@ NavigationCommand NavigationController::update_search_direction(
 
 NavigationCommand NavigationController::update_normal(
 	const lidar::ProcessedLidarData &lidar_data, float heading_rad,
-	float speed_mps, float dt_s, NavigationDebug &debug) {
+	float speed_mps, float dt_s, const std::optional<ReplayHint> &replay_hint,
+	NavigationDebug &debug) {
 
 	NavigationCommand command;
 
@@ -235,6 +236,32 @@ NavigationCommand NavigationController::update_normal(
 
 			command.target_speed_mps =
 				calculate_approach_speed_mps(front_distance, effective_trigger);
+		}
+	}
+
+	// A learned map is a preview source only. It may start the speed transition
+	// earlier on laps two and three, but the live front wall still owns the
+	// NORMAL -> TURNING transition.
+	if (replay_hint.has_value()) {
+		debug.map_preview_valid = true;
+		debug.map_distance_to_corner_m = replay_hint->distance_to_entry_m;
+		debug.map_confidence = replay_hint->confidence;
+
+		if (replay_hint->approach_recommended) {
+			debug.map_approach_active = true;
+			const float preview_distance_m =
+				std::max(0.10f, config_.approach_distance_m);
+			const float progress = 1.0f -
+				std::clamp(
+					replay_hint->distance_to_entry_m / preview_distance_m, 0.0f,
+					1.0f);
+			const float learned_speed_mps = std::clamp(
+				replay_hint->safe_speed_mps, 0.0f, config_.normal_speed_mps);
+			const float preview_speed_mps = config_.normal_speed_mps +
+				(learned_speed_mps - config_.normal_speed_mps) *
+					smoothstep(progress);
+			command.target_speed_mps =
+				std::min(command.target_speed_mps, preview_speed_mps);
 		}
 	}
 

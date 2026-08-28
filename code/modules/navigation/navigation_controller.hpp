@@ -7,6 +7,7 @@
 #include "navigation_state.hpp"
 #include "pid.hpp"
 #include "stanley_controller.hpp"
+#include "track_map.hpp"
 
 namespace navigation {
 
@@ -123,7 +124,8 @@ class NavigationController {
 		InitialDirectionConfig direction_config = {});
 
 	NavigationResult update(const lidar::ProcessedLidarData &lidar_data,
-		float heading_rad, float speed_mps);
+		float heading_rad, float speed_mps,
+		const std::optional<ReplayHint> &replay_hint = std::nullopt);
 
 	void reset(float heading_rad = 0.0f);
 
@@ -140,7 +142,8 @@ class NavigationController {
 		NavigationDebug &debug);
 
 	NavigationCommand update_normal(const lidar::ProcessedLidarData &lidar_data,
-		float heading_rad, float speed_mps, float dt_s, NavigationDebug &debug);
+		float heading_rad, float speed_mps, float dt_s,
+		const std::optional<ReplayHint> &replay_hint, NavigationDebug &debug);
 
 	NavigationCommand update_turning(
 		float heading_rad, float speed_mps, float dt_s, NavigationDebug &debug);

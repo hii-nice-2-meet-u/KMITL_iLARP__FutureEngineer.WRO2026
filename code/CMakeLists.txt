@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.10)
 project(iLARP-WRO-FE-2026 LANGUAGES CXX)
 
+enable_testing()
+
 set(CMAKE_CXX_STANDARD 17)
 
 find_package(OpenCV REQUIRED)
@@ -22,6 +24,6 @@ add_subdirectory(app/test_lidar)
 add_subdirectory(app/test_otos)
 add_subdirectory(app/test_spi)
 add_subdirectory(app/camera_tuner)
+add_subdirectory(app/_challenge/open)
 
 add_subdirectory(tests)
-

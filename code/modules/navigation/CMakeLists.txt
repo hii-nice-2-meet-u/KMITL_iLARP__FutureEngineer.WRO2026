@@ -1,6 +1,7 @@
 add_library(navigation STATIC
     init_direction.cpp
     navigation_controller.cpp
+    track_map.cpp
 )
 
 target_include_directories(navigation PUBLIC
