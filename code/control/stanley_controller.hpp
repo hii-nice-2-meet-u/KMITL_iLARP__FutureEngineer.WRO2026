@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include "pid.hpp"
+
 namespace control {
 
 struct StanleyConfig {
@@ -13,7 +15,10 @@ struct StanleyConfig {
 	float softening_speed_mps{0.20f};
 
 	// Physical steering limit of Ackermann front wheels
-	float max_steering_rad{0.523599f}; // 30 deg
+	float max_steering_rad{0.785398f}; // 30 deg
+
+	PIDConfig heading_pid{
+		1.00f, 0.12f, 0.025f, -0.785398f, 0.785398f, -0.50f, 0.50f, 0.10f};
 };
 
 class StanleyController {
@@ -43,7 +48,9 @@ class StanleyController {
 	 *     positive = RIGHT
 	 */
 	float calculate(float cross_track_error_m, float heading_error_rad,
-		float speed_mps) const;
+		float speed_mps, float dt_s) const;
+
+	void reset();
 
 	void set_config(const StanleyConfig &config);
 
@@ -51,6 +58,7 @@ class StanleyController {
 
   private:
 	StanleyConfig config_;
+	mutable PID heading_pid_;
 };
 
 } // namespace control

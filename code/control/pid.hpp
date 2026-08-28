@@ -23,6 +23,7 @@ class PID {
 	explicit PID(PIDConfig config = {});
 
 	float calculate(float setpoint, float current);
+	float calculate(float setpoint, float current, float dt_s);
 
 	void reset();
 

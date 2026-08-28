@@ -15,6 +15,7 @@ struct NavigationCommand {
 	// steering: negative = left, positive = right [rad]
 	float target_speed_mps{0.0f};
 	float steering_rad{0.0f};
+	float target_acceleration_mps2{0.0f};
 };
 
 struct NavigationDebug {
@@ -35,6 +36,7 @@ struct NavigationDebug {
 	// Command shaping
 	float raw_steering_rad{0.0f};
 	float raw_target_speed_mps{0.0f};
+	float target_acceleration_mps2{0.0f};
 	float corner_speed_mps{0.0f};
 	float effective_turn_trigger_m{0.0f};
 	float update_dt_s{0.0f};

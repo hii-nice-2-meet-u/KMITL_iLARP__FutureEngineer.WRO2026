@@ -586,6 +586,9 @@ void draw_debug_panel(cv::Mat &map, const lidar::ProcessedLidarData &processed,
 			" m/s   CORNER CAP " + fixed(nav.debug.corner_speed_mps, 2) +
 			" m/s",
 		white);
+	text("SPEED PID ACCEL " + fixed(nav.command.target_acceleration_mps2, 2) +
+			" m/s2",
+		cyan);
 	text("MOTOR OUTPUT OFF", dim);
 
 	section("LIDAR / WALL FOLLOWING");
@@ -639,115 +642,30 @@ int main() {
 
 	navigation::NavigationConfig nav_config;
 
-	// Follow outer wall at 30 cm.
+	// =====================================================================
+	// FIELD TUNING — change only these values during track testing.
+	// Everything else has a stable default in its owning module.
+	// =====================================================================
+
+	// Path and speed profile
 	nav_config.target_outer_distance_m = 0.30f;
-
-	// Stanley
-	nav_config.stanley.k = 0.85f;
-
-	nav_config.stanley.softening_speed_mps = 0.30f;
-
-	nav_config.stanley.max_steering_rad = 30.0f * PI / 180.0f;
-
-	// Search direction centering.
-	nav_config.search_center_kp = 0.8f;
-
-	// Corner detection.
+	nav_config.normal_speed_mps = 0.85f;
+	nav_config.turning_speed_mps = 0.65f;
 	nav_config.approach_distance_m = 0.90f;
 
-	nav_config.turn_trigger_distance_m = 0.50f;
+	// Stanley-PID steering: k corrects wall distance; PID corrects heading.
+	nav_config.stanley.k = 0.85f;
+	nav_config.stanley.heading_pid.kp = 1.00f;
+	nav_config.stanley.heading_pid.ki = 0.12f;
+	nav_config.stanley.heading_pid.kd = 0.025f;
 
-	nav_config.turn_rearm_distance_m = 0.85f;
+	// Speed PID output is requested acceleration [m/s^2]. It requires actual
+	// speed from an encoder when a motor controller is connected.
+	nav_config.speed_pid.kp = 4.0f;
+	nav_config.speed_pid.ki = 1.0f;
+	nav_config.speed_pid.kd = 0.04f;
 
-	nav_config.turn_preview_time_s = 0.10f;
-
-	nav_config.turn_trigger_confirm_frames = 2;
-
-	// Measure this on the final chassis before track tuning.
-	nav_config.wheelbase_m = 0.18f;
-
-	// 0.10 m outer-wall radius + 0.30 m wall-following offset.
-	nav_config.corner_radius_m = 0.40f;
-
-	nav_config.turn_entry_blend_rad = 10.0f * PI / 180.0f;
-
-	nav_config.turn_exit_blend_rad = 22.0f * PI / 180.0f;
-
-	nav_config.exit_acceleration_blend_rad = 15.0f * PI / 180.0f;
-
-	// Heading turn controller.
-	nav_config.turn_heading_kp = 0.8f;
-
-	nav_config.heading_tolerance_rad = 3.0f * PI / 180.0f;
-
-	nav_config.heading_confirm_frames = 3;
-
-	// OTOS:
-	// +heading = CCW
-	nav_config.clockwise_turn_delta_rad = -PI * 0.5f;
-
-	nav_config.counter_clockwise_turn_delta_rad = PI * 0.5f;
-
-	// OTOS heading convention
-	// ->
-	// steering convention
-	//
-	// steering -
-	// = LEFT
-	//
-	// steering +
-	// = RIGHT
-	nav_config.heading_to_steering_sign = -1.0f;
-
-	// These are only Navigation outputs.
-	// No motor is connected in this test.
-	nav_config.search_speed_mps = 0.25f;
-
-	nav_config.normal_speed_mps = 0.85f;
-
-	nav_config.approach_speed_mps = 0.72f;
-
-	nav_config.turning_speed_mps = 0.65f;
-
-	nav_config.lost_wall_speed_mps = 0.30f;
-
-	nav_config.max_lateral_acceleration_mps2 = 1.40f;
-
-	nav_config.steering_filter_time_constant_s = 0.035f;
-
-	nav_config.max_steering_rate_rad_s = 7.0f;
-
-	nav_config.max_acceleration_mps2 = 1.8f;
-
-	nav_config.max_deceleration_mps2 = 3.0f;
-
-	nav_config.total_turns = 12;
-
-	// =========================================================================
-	// DIRECTION CONFIG
-	// =========================================================================
-
-	navigation::InitialDirectionConfig direction_config;
-
-	direction_config.max_collinear_offset_m = 0.04f;
-
-	direction_config.max_continuation_gap_m = 0.20f;
-
-	direction_config.max_perpendicular_error_rad = 15.0f * PI / 180.0f;
-
-	direction_config.max_connection_gap_m = 0.35f;
-
-	direction_config.min_candidate_length_m = 0.15f;
-
-	direction_config.frame_min_score = 6.0f;
-
-	direction_config.frame_score_margin = 1.5f;
-
-	direction_config.score_decay = 0.7f;
-
-	direction_config.required_confirm_frames = 3;
-
-	navigation::NavigationController navigation(nav_config, direction_config);
+	navigation::NavigationController navigation(nav_config);
 
 	// =========================================================================
 	// LIDAR

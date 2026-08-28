@@ -8,7 +8,8 @@ namespace navigation {
 NavigationController::NavigationController(
 	NavigationConfig config, InitialDirectionConfig direction_config)
 	: config_(config), direction_estimator_(direction_config),
-	  stanley_(config.stanley) {}
+	  stanley_(config.stanley), turn_heading_pid_(config.turn_heading_pid),
+	  speed_pid_(config.speed_pid) {}
 
 // UPDATE
 
@@ -56,8 +57,10 @@ NavigationResult NavigationController::update(
 	result.debug.corner_speed_mps = calculate_corner_speed_mps();
 	result.debug.update_dt_s = dt_s;
 
-	result.command = condition_command(
-		result.command, dt_s, state_.mode == NavigationMode::FINISHED);
+	result.command = condition_command(result.command, speed_mps, dt_s,
+		state_.mode == NavigationMode::FINISHED);
+	result.debug.target_acceleration_mps2 =
+		result.command.target_acceleration_mps2;
 
 	return result;
 }
@@ -88,6 +91,10 @@ void NavigationController::reset(float heading_rad) {
 	conditioned_steering_rad_ = 0.0f;
 	conditioned_speed_mps_ = 0.0f;
 	command_conditioner_initialized_ = false;
+
+	stanley_.reset();
+	turn_heading_pid_.reset();
+	speed_pid_.reset();
 }
 
 // SEARCH DIRECTION
@@ -168,6 +175,8 @@ NavigationCommand NavigationController::update_normal(
 
 	if (track_walls.outer == nullptr) {
 
+		stanley_.reset();
+
 		command.target_speed_mps = config_.lost_wall_speed_mps;
 
 		command.steering_rad = 0.0f;
@@ -205,8 +214,8 @@ NavigationCommand NavigationController::update_normal(
 	// Stanley steering
 	// ---------------------------------------------------------
 
-	command.steering_rad =
-		stanley_.calculate(cross_track_error_m, heading_error_rad, speed_mps);
+	command.steering_rad = stanley_.calculate(
+		cross_track_error_m, heading_error_rad, speed_mps, dt_s);
 
 	// ---------------------------------------------------------
 	// Target speed
@@ -305,8 +314,9 @@ NavigationCommand NavigationController::update_turning(
 	const float entry_steering_rad =
 		turn_entry_steering_rad_ * (1.0f - entry_weight);
 
-	const float tracking_steering_rad = config_.turn_heading_kp *
-		tracking_error_rad * config_.heading_to_steering_sign;
+	const float tracking_steering_rad =
+		turn_heading_pid_.calculate(0.0f, -tracking_error_rad, dt_s) *
+		config_.heading_to_steering_sign;
 
 	debug.turn_feedforward_rad = feedforward_rad;
 
@@ -561,6 +571,7 @@ void NavigationController::start_turn(float heading_rad) {
 	turn_total_angle_rad_ = std::abs(signed_turn_angle_rad);
 	turn_heading_sign_ = heading_delta >= 0.0f ? 1.0f : -1.0f;
 	turn_entry_steering_rad_ = conditioned_steering_rad_;
+	turn_heading_pid_.reset();
 
 	state_.heading_confirm_frames = 0;
 
@@ -674,12 +685,18 @@ float NavigationController::calculate_dt_s(std::uint64_t timestamp_us) {
 }
 
 NavigationCommand NavigationController::condition_command(
-	const NavigationCommand &command, float dt_s, bool stop_immediately) {
+	const NavigationCommand &command, float measured_speed_mps, float dt_s,
+	bool stop_immediately) {
 	if (stop_immediately) {
 		conditioned_speed_mps_ = 0.0f;
 		conditioned_steering_rad_ = 0.0f;
 		command_conditioner_initialized_ = true;
-		return {};
+		speed_pid_.reset();
+		const float acceleration_mps2 = speed_pid_.calculate(0.0f,
+			std::isfinite(measured_speed_mps) ? std::abs(measured_speed_mps)
+											  : 0.0f,
+			dt_s);
+		return {0.0f, 0.0f, acceleration_mps2};
 	}
 
 	if (!command_conditioner_initialized_) {
@@ -717,7 +734,13 @@ NavigationCommand NavigationController::condition_command(
 			-max_steering_delta_rad, max_steering_delta_rad);
 	conditioned_steering_rad_ = clamp_steering(conditioned_steering_rad_);
 
-	return {conditioned_speed_mps_, conditioned_steering_rad_};
+	const float actual_speed_mps =
+		std::isfinite(measured_speed_mps) ? std::abs(measured_speed_mps) : 0.0f;
+	const float acceleration_mps2 =
+		speed_pid_.calculate(conditioned_speed_mps_, actual_speed_mps, dt_s);
+
+	return {
+		conditioned_speed_mps_, conditioned_steering_rad_, acceleration_mps2};
 }
 
 float NavigationController::smoothstep(float value) {

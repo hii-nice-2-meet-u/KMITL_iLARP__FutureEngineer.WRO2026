@@ -5,6 +5,7 @@
 #include "init_direction.hpp"
 #include "lidar_processor.hpp"
 #include "navigation_state.hpp"
+#include "pid.hpp"
 #include "stanley_controller.hpp"
 
 namespace navigation {
@@ -55,7 +56,9 @@ struct NavigationConfig {
 	// targeting the final 90-degree heading immediately, this avoids saturating
 	// the steering at corner entry.
 
-	float turn_heading_kp{0.8f};
+	// PID correction for the moving heading reference during a corner.
+	control::PIDConfig turn_heading_pid{
+		0.80f, 0.08f, 0.020f, -0.785398f, 0.785398f, -0.50f, 0.50f, 0.10f};
 
 	float heading_tolerance_rad{5.0f * 3.14159265358979323846f / 180.0f};
 
@@ -101,6 +104,11 @@ struct NavigationConfig {
 	float max_steering_rate_rad_s{7.0f};
 	float max_acceleration_mps2{1.8f};
 	float max_deceleration_mps2{3.0f};
+
+	// Converts speed error (target - measured) into an acceleration request
+	// for the downstream motor controller.
+	control::PIDConfig speed_pid{
+		4.0f, 1.0f, 0.04f, -3.0f, 1.8f, -1.0f, 1.0f, 0.10f};
 
 	float nominal_update_period_s{0.05f};
 	float min_update_period_s{0.005f};
@@ -163,8 +171,8 @@ class NavigationController {
 
 	float calculate_dt_s(std::uint64_t timestamp_us);
 
-	NavigationCommand condition_command(
-		const NavigationCommand &command, float dt_s, bool stop_immediately);
+	NavigationCommand condition_command(const NavigationCommand &command,
+		float measured_speed_mps, float dt_s, bool stop_immediately);
 
 	static float smoothstep(float value);
 
@@ -181,6 +189,8 @@ class NavigationController {
 	InitialDirectionEstimator direction_estimator_;
 
 	control::StanleyController stanley_;
+	control::PID turn_heading_pid_;
+	control::PID speed_pid_;
 
 	std::uint64_t previous_timestamp_us_{0};
 
