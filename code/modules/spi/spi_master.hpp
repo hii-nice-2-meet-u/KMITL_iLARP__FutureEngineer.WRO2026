@@ -1,52 +1,74 @@
-#include <chrono>
+#pragma once
+
+#include <array>
 #include <cstdint>
-#include <fcntl.h>
-#include <iomanip>
-#include <iostream>
-#include <linux/spi/spi.h>
-#include <linux/spi/spidev.h>
 #include <optional>
-#include <ostream>
-#include <sys/ioctl.h>
-#include <thread>
-#include <unistd.h>
+
+#include <linux/spi/spidev.h>
 
 namespace spi {
 
-enum Command : uint8_t {
+enum class Command : std::uint8_t {
 	NULL_ = 0x00,
 	ECTO_TEST = 0x01,
 
 	M_ENABLE = 0x20,
 	M_DISABLE = 0x21,
-	M1_POW = 0x20, //LEFT
-	M2_POW = 0x21, //RIGHT
+	M1_POW = 0x22,
+	M2_POW = 0x23,
+	M1_DUTY = 0x24,
+	M2_DUTY = 0x25,
 	M1_SPD = 0x26,
 	M2_SPD = 0x27,
-	
+
 	SERVO_PULSE = 0x40,
 	SERVO_ANGLE = 0x41,
-	
-	VOL_CHECK = 0xa0;
+
+	VOL_CHECK = 0xA0,
 };
+
+enum class Motor { M1, M2 };
 
 class SPI {
   public:
-	SPI();
+	SPI() = default;
 	~SPI();
 
-	bool init(const std::uint8_t &num_port = 0, std::uint8_t mode = SPI_MODE_0,
-		std::uint8_t bits = 8, std::uint32_t speed = 15'000'000) const;
-	void closeBus();
+	SPI(const SPI &) = delete;
+	SPI &operator=(const SPI &) = delete;
 
-	std::optional<uint32_t> get_voltage();
+	bool initialize(std::uint8_t chip_select = 0,
+		std::uint8_t mode = SPI_MODE_0, std::uint8_t bits = 8,
+		std::uint32_t speed_hz = 15'000'000);
+
+	void close();
+	bool is_open() const { return fd_ >= 0; }
+
+	bool echo_test(std::uint16_t value, std::uint16_t &response);
+	bool enable_motors();
+	bool disable_motors();
+
+	// Accepted range is 0-100. Values outside the range are rejected.
+	bool set_motor_power(Motor motor, std::uint16_t percent);
+	bool set_motor_speed(Motor motor, std::uint16_t percent);
+
+	// Positional servo command: 0-180 degrees, center = 90 degrees.
+	bool set_servo_angle(std::uint16_t angle_deg);
+
+	// The controller returns battery voltage as unsigned millivolts.
+	std::optional<float> read_voltage_v();
 
   private:
-	bool send_data(const Command &command, std::uint16_t tx_data, uint8_t &rx);
+	using Frame = std::array<std::uint8_t, 3>;
 
-  private:
+	bool transfer(Command command, std::uint16_t data, Frame *rx = nullptr);
+	bool request(Command command, std::uint16_t data, Frame &response);
+
+	static std::uint16_t decode_data(const Frame &frame);
+
 	int fd_{-1};
-	std::uint32_t speed_{0};
+	std::uint32_t speed_hz_{0};
 	std::uint8_t bits_{0};
 };
+
 } // namespace spi

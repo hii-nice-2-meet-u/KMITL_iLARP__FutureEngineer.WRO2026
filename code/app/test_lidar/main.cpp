@@ -664,23 +664,41 @@ int main() {
 	// Everything else has a stable default in its owning module.
 	// =====================================================================
 
-	// Path and speed profile
-	nav_config.target_outer_distance_m = 0.30f;
-	nav_config.normal_speed_mps = 0.85f;
-	nav_config.turning_speed_mps = 0.65f;
-	nav_config.approach_distance_m = 0.90f;
+	nav_config.target_outer_distance_m = 0.20f;
 
-	// Stanley-PID steering: k corrects wall distance; PID corrects heading.
+	// Stanley cross-track gain
 	nav_config.stanley.k = 0.85f;
+
+	// Stanley heading PID
 	nav_config.stanley.heading_pid.kp = 1.00f;
 	nav_config.stanley.heading_pid.ki = 0.12f;
 	nav_config.stanley.heading_pid.kd = 0.025f;
 
-	// Speed PID output is requested acceleration [m/s^2]. It requires actual
-	// speed from an encoder when a motor controller is connected.
-	nav_config.speed_pid.kp = 4.0f;
-	nav_config.speed_pid.ki = 1.0f;
-	nav_config.speed_pid.kd = 0.04f;
+	// Turn heading PID
+	nav_config.turn_heading_pid.kp = 0.80f;
+	nav_config.turn_heading_pid.ki = 0.08f;
+	nav_config.turn_heading_pid.kd = 0.020f;
+
+	// Speed PID
+	nav_config.speed_pid.kp = 3.50f;
+	nav_config.speed_pid.ki = 0.80f;
+	nav_config.speed_pid.kd = 0.170f;
+
+	// ระยะ front wall ที่เริ่ม TURNING
+	nav_config.turn_trigger_distance_m = 0.85f;
+
+	// Blend steering ตอนเข้า/ออกโค้ง
+	nav_config.turn_entry_blend_rad = 13.0f * PI / 180.0f;
+	nav_config.turn_exit_blend_rad = 26.0f * PI / 180.0f;
+
+	// จำกัดอัตราการเปลี่ยน steering
+	nav_config.max_steering_rate_rad_s = 7.0f;
+
+	// จำกัดความเร็วจากแรงเหวี่ยง
+	nav_config.max_lateral_acceleration_mps2 = 1.40f;
+
+	// ชดเชย latency ตอนตรวจโค้ง
+	nav_config.turn_preview_time_s = 0.08f;
 
 	navigation::NavigationController navigation(nav_config);
 	navigation::TrackMap track_map;
@@ -725,6 +743,8 @@ int main() {
 	otos.setAngularUnit(kSfeOtosAngularUnitRadians);
 
 	otos.resetTracking();
+
+	otos.calibrateImu(255, true);
 
 	std::cout << "LiDAR + OTOS ready\n";
 

@@ -17,6 +17,7 @@ add_subdirectory(modules/lidar)
 add_subdirectory(modules/camera)
 add_subdirectory(modules/otos)
 add_subdirectory(modules/navigation)
+add_subdirectory(modules/spi)
 add_subdirectory(control)
 
 add_subdirectory(app/test_camera)

@@ -1,132 +1,153 @@
-#include <chrono>
 #include <cstdint>
-#include <fcntl.h>
-#include <iomanip>
 #include <iostream>
-#include <linux/spi/spidev.h>
-#include <ostream>
-#include <sys/ioctl.h>
-#include <thread>
-#include <unistd.h>
+#include <limits>
+#include <string>
 
-#define SPI_DEVICE "/dev/spidev0.0"
+#include "spi_master.hpp"
 
-bool spi_transfer(int fd, const uint8_t *tx, uint8_t *rx, std::size_t len,
-	uint32_t speed, uint8_t bits) {
+namespace {
 
-	spi_ioc_transfer tr{};
-
-	tr.tx_buf = reinterpret_cast<unsigned long>(tx);
-
-	tr.rx_buf = reinterpret_cast<unsigned long>(rx);
-
-	tr.len = static_cast<uint32_t>(len);
-
-	tr.speed_hz = speed;
-
-	tr.bits_per_word = bits;
-
-	return ioctl(fd, SPI_IOC_MESSAGE(1), &tr) >= 0;
+void print_help() {
+	std::cout << "\nCommands:\n"
+			  << "  t VALUE       echo-test a 16-bit value\n"
+			  << "  v             read voltage\n"
+			  << "  e             enable motors\n"
+			  << "  d             disable motors\n"
+			  << "  p MOTOR VALUE set motor power, MOTOR=1|2, VALUE=0..100\n"
+			  << "  s MOTOR VALUE set motor speed, MOTOR=1|2, VALUE=0..100\n"
+			  << "  a ANGLE       set servo angle 0..180, center=90\n"
+			  << "  h             show this help\n"
+			  << "  q             stop motors and quit\n\n";
 }
 
-void print_rx(const uint8_t *rx, std::size_t len) {
-	// std::uint16_t result = (static_cast<uint16_t>(rx[1]) << 8) | rx[2];
-
-	// std::cout << "RX: " << std::hex << result << '\n';
-	std::cout << "RX: ";
-
-	for (std::size_t i = 0; i < len; ++i) {
-
-		std::cout << "0x" << std::hex << std::setw(2) << std::setfill('0')
-				  << static_cast<int>(rx[i]) << ' ';
+bool read_motor(int number, spi::Motor &motor) {
+	if (number == 1) {
+		motor = spi::Motor::M1;
+		return true;
 	}
-
-	std::cout << std::dec << '\n';
-}
-
-void print_tx(const uint8_t *rx, std::size_t len) {
-
-	std::cout << "TX: ";
-
-	for (std::size_t i = 0; i < len; ++i) {
-
-		std::cout << "0x" << std::hex << std::setw(2) << std::setfill('0')
-				  << static_cast<int>(rx[i]) << ' ';
+	if (number == 2) {
+		motor = spi::Motor::M2;
+		return true;
 	}
-
-	std::cout << std::dec << "\t";
+	std::cerr << "Motor must be 1 or 2\n";
+	return false;
 }
+
+void clear_bad_input() {
+	std::cin.clear();
+	std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+}
+
+bool stop_motors(spi::SPI &bus) {
+	const bool m1_power = bus.set_motor_power(spi::Motor::M1, 0);
+	const bool m2_power = bus.set_motor_power(spi::Motor::M2, 0);
+	const bool m1_speed = bus.set_motor_speed(spi::Motor::M1, 0);
+	const bool m2_speed = bus.set_motor_speed(spi::Motor::M2, 0);
+	const bool disabled = bus.disable_motors();
+	return m1_power && m2_power && m1_speed && m2_speed && disabled;
+}
+
+} // namespace
 
 int main() {
-
-	const int fd = open(SPI_DEVICE, O_RDWR);
-
-	if (fd < 0) {
-
-		std::cerr << "Cannot open SPI port\n";
-
+	spi::SPI bus;
+	if (!bus.initialize()) {
 		return 1;
 	}
 
-	uint8_t mode = SPI_MODE_0;
-
-	uint8_t bits = 8;
-
-	uint32_t speed = 15'000'000;
-
-	if (ioctl(fd, SPI_IOC_WR_MODE, &mode) < 0 ||
-		ioctl(fd, SPI_IOC_WR_BITS_PER_WORD, &bits) < 0 ||
-		ioctl(fd, SPI_IOC_WR_MAX_SPEED_HZ, &speed) < 0) {
-
-		std::cerr << "Cannot configure SPI\n";
-
-		close(fd);
-
+	// Motor output starts disabled. Servo remains untouched until the user
+	// explicitly enters an angle command.
+	if (!bus.disable_motors()) {
+		std::cerr << "Failed to put motor controller in disabled state\n";
 		return 1;
 	}
 
-	const uint8_t command[]{0xa0, 0x00, 0x00};
-	const uint8_t dummy[]{0x00, 0x00, 0x00};
+	std::cout << "SPI ready on /dev/spidev0.0 at 15 MHz\n"
+			  << "Motors are DISABLED; servo has not been moved.\n";
+	print_help();
 
-	while (true) {
-
-		uint8_t rx_command[3]{};
-
-		if (!spi_transfer(
-				fd, command, rx_command, sizeof(command), speed, bits)) {
-
-			std::cerr << "SPI command transfer failed\n";
-
+	std::string command;
+	while (std::cout << "spi> " && std::cin >> command) {
+		if (command == "q") {
 			break;
 		}
-
-		print_tx(command, sizeof(command));
-		print_rx(rx_command, sizeof(rx_command));
-
-		std::this_thread::sleep_for(std::chrono::milliseconds(10));
-
-		uint8_t rx_data[3]{};
-
-		if (!spi_transfer(fd, dummy, rx_data, sizeof(dummy), speed, bits)) {
-
-			std::cerr << "SPI data transfer failed\n";
-
-			break;
+		if (command == "h") {
+			print_help();
+			continue;
+		}
+		if (command == "e") {
+			std::cout << (bus.enable_motors() ? "Motors ENABLED\n"
+											  : "Enable failed\n");
+			continue;
+		}
+		if (command == "d") {
+			std::cout << (stop_motors(bus) ? "Motors stopped and DISABLED\n"
+										   : "Motor stop failed\n");
+			continue;
+		}
+		if (command == "v") {
+			const auto voltage = bus.read_voltage_v();
+			if (voltage.has_value()) {
+				std::cout << "Voltage: " << *voltage << " V\n";
+			} else {
+				std::cout << "Voltage read failed\n";
+			}
+			continue;
+		}
+		if (command == "t") {
+			unsigned int value = 0;
+			if (!(std::cin >> value) || value > 65535) {
+				std::cerr << "Echo value must be 0-65535\n";
+				clear_bad_input();
+				continue;
+			}
+			std::uint16_t response = 0;
+			if (bus.echo_test(static_cast<std::uint16_t>(value), response)) {
+				std::cout << "Echo response: " << response
+						  << (response == value ? " PASS\n" : " MISMATCH\n");
+			} else {
+				std::cout << "Echo transfer failed\n";
+			}
+			continue;
+		}
+		if (command == "a") {
+			unsigned int angle = 0;
+			if (!(std::cin >> angle) || angle > 180) {
+				std::cerr << "Servo angle must be 0-180\n";
+				clear_bad_input();
+				continue;
+			}
+			std::cout << (bus.set_servo_angle(angle)
+					? "Servo angle sent\n"
+					: "Servo command failed\n");
+			continue;
+		}
+		if (command == "p" || command == "s") {
+			int motor_number = 0;
+			unsigned int value = 0;
+			if (!(std::cin >> motor_number >> value) || value > 100) {
+				std::cerr << "Expected MOTOR=1|2 and VALUE=0..100\n";
+				clear_bad_input();
+				continue;
+			}
+			spi::Motor motor = spi::Motor::M1;
+			if (!read_motor(motor_number, motor)) {
+				continue;
+			}
+			const bool ok = command == "p" ? bus.set_motor_power(motor, value)
+										   : bus.set_motor_speed(motor, value);
+			std::cout << (ok ? "Motor command sent\n"
+							 : "Motor command failed\n");
+			continue;
 		}
 
-		print_tx(dummy, sizeof(dummy));
-		print_rx(rx_data, sizeof(rx_data));
-
-		// -----------------------------------------------------
-		// 3. Wait 1 second
-		// -----------------------------------------------------
-
-		std::this_thread::sleep_for(std::chrono::seconds(1));
-
-		std::cout << "======================================" << '\n';
+		std::cerr << "Unknown command; enter h for help\n";
 	}
 
-	close(fd);
-
+	if (!stop_motors(bus)) {
+		std::cerr << "WARNING: final motor-disable command failed\n";
+	}
+	bus.close();
+	std::cout << "SPI closed\n";
 	return 0;
 }
