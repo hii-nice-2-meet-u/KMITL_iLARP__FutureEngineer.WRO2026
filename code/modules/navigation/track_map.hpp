@@ -67,6 +67,10 @@ struct TrackMapConfig {
 	float replay_preview_distance_m{1.10f};
 	float replay_max_heading_error_rad{0.45f};
 	float minimum_replay_confidence{0.60f};
+	// TODO(WRO tuning): A three-lap run provides few updates per corner, so the
+	// fixed 0.25 EMA can over-weight lap 1. After real logging is available,
+	// compare a 0.5-0.6 weight with a running average of
+	// 1 / (observation_count + 1). Keep 0.25 until data supports changing it.
 	float update_weight{0.25f};
 	float traffic_merge_distance_m{0.25f};
 };
@@ -85,6 +89,8 @@ class TrackMap {
 	std::optional<ReplayHint> replay_hint(
 		const MapPose &pose, std::size_t next_corner_index) const;
 
+	// Reserved for Obstacle Challenge; not wired into Open Challenge main loops
+	// yet.
 	std::size_t observe_traffic_light(float x_m, float y_m, TrafficColor color,
 		PassSide pass_side, float confidence);
 

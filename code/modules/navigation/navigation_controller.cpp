@@ -78,6 +78,7 @@ void NavigationController::reset(float heading_rad) {
 	direction_estimator_.reset();
 
 	previous_timestamp_us_ = 0;
+	last_elapsed_update_s_ = 0.0f;
 
 	turn_start_heading_rad_ = heading_rad;
 	turn_reference_heading_rad_ = heading_rad;
@@ -87,6 +88,9 @@ void NavigationController::reset(float heading_rad) {
 	turn_entry_steering_rad_ = 0.0f;
 
 	turn_trigger_frames_ = 0;
+	last_valid_wall_heading_rad_ = heading_rad;
+	lost_wall_timer_s_ = 0.0f;
+	has_last_valid_wall_heading_ = false;
 
 	conditioned_steering_rad_ = 0.0f;
 	conditioned_speed_mps_ = 0.0f;
@@ -177,17 +181,40 @@ NavigationCommand NavigationController::update_normal(
 	if (track_walls.outer == nullptr) {
 
 		stanley_.reset();
+		lost_wall_timer_s_ += last_elapsed_update_s_;
 
 		command.target_speed_mps = config_.lost_wall_speed_mps;
 
-		command.steering_rad = 0.0f;
+		const bool heading_hold_available = has_last_valid_wall_heading_ &&
+			std::isfinite(heading_rad) &&
+			lost_wall_timer_s_ <= std::max(0.0f, config_.max_heading_hold_s);
+
+		if (heading_hold_available) {
+			const float heading_error_rad =
+				normalize_angle(last_valid_wall_heading_rad_ - heading_rad);
+			command.steering_rad = clamp_steering(
+				config_.heading_to_steering_sign * heading_error_rad);
+			debug.heading_tracking_error_rad = heading_error_rad;
+			debug.heading_hold_active = true;
+		} else {
+			command.steering_rad = 0.0f;
+		}
 
 		debug.outer_wall_valid = false;
 
 		debug.front_wall_valid = lidar_data.walls.front.has_value();
+		debug.lost_wall_time_s = lost_wall_timer_s_;
 
 		return command;
 	}
+
+	if (std::isfinite(heading_rad)) {
+		last_valid_wall_heading_rad_ = heading_rad;
+		has_last_valid_wall_heading_ = true;
+	} else {
+		has_last_valid_wall_heading_ = false;
+	}
+	lost_wall_timer_s_ = 0.0f;
 
 	debug.outer_wall_valid = true;
 
@@ -599,6 +626,8 @@ void NavigationController::start_turn(float heading_rad) {
 	turn_heading_sign_ = heading_delta >= 0.0f ? 1.0f : -1.0f;
 	turn_entry_steering_rad_ = conditioned_steering_rad_;
 	turn_heading_pid_.reset();
+	lost_wall_timer_s_ = 0.0f;
+	has_last_valid_wall_heading_ = false;
 
 	state_.heading_confirm_frames = 0;
 
@@ -704,6 +733,7 @@ float NavigationController::calculate_dt_s(std::uint64_t timestamp_us) {
 	if (timestamp_us != 0) {
 		previous_timestamp_us_ = timestamp_us;
 	}
+	last_elapsed_update_s_ = std::max(0.0f, dt_s);
 
 	const float min_dt_s = std::max(1e-4f, config_.min_update_period_s);
 	const float max_dt_s = std::max(min_dt_s, config_.max_update_period_s);

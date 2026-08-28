@@ -74,7 +74,8 @@ inline const char *direction_name(
 
 inline void print_command(const navigation::NavigationResult &result,
 	const navigation::NavigationState &state, float heading_rad,
-	float measured_speed_mps) {
+	float measured_speed_mps, std::int16_t power_percent,
+	std::uint16_t servo_pulse_us) {
 	std::cout << "[NAV] mode=" << mode_name(state.mode)
 			  << " dir=" << direction_name(state.direction)
 			  << " turn=" << state.turn_count << "/12"
@@ -83,7 +84,8 @@ inline void print_command(const navigation::NavigationResult &result,
 			  << " target=" << result.command.target_speed_mps << "m/s"
 			  << " accel=" << result.command.target_acceleration_mps2 << "m/s2"
 			  << " steering=" << result.command.steering_rad * RAD_TO_DEG
-			  << "deg [NO SPI]\n";
+			  << "deg power=" << power_percent << "% pulse=" << servo_pulse_us
+			  << "us\n";
 }
 
 } // namespace open_challenge

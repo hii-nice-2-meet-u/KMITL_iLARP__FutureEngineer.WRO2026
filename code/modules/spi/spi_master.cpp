@@ -14,8 +14,12 @@ namespace spi {
 
 namespace {
 
-constexpr std::uint8_t MAX_PERCENT = 100;
+constexpr std::int16_t MIN_POWER_PERCENT = -100;
+constexpr std::int16_t MAX_POWER_PERCENT = 100;
+constexpr std::uint8_t MAX_SPEED_PERCENT = 100;
 constexpr std::uint8_t MAX_SERVO_ANGLE_DEG = 180;
+constexpr std::uint16_t MIN_SERVO_PULSE_US = 1000;
+constexpr std::uint16_t MAX_SERVO_PULSE_US = 2100;
 constexpr auto RESPONSE_DELAY = std::chrono::milliseconds(2);
 
 } // namespace
@@ -70,24 +74,32 @@ bool SPI::enable_motors() { return transfer(Command::M_ENABLE, 0); }
 
 bool SPI::disable_motors() { return transfer(Command::M_DISABLE, 0); }
 
-bool SPI::set_motor_power(Motor motor, std::uint16_t percent) {
-	if (percent > MAX_PERCENT) {
-		std::cerr << "Motor power must be in range 0-100\n";
+bool SPI::set_motor_power(Motor motor, std::int16_t percent) {
+	if (percent < MIN_POWER_PERCENT || percent > MAX_POWER_PERCENT) {
+		std::cerr << "Motor power must be in range -100 to +100\n";
 		return false;
 	}
 	const Command command =
 		motor == Motor::M1 ? Command::M1_POW : Command::M2_POW;
-	return transfer(command, percent);
+	return transfer(command, static_cast<std::uint16_t>(percent));
 }
 
 bool SPI::set_motor_speed(Motor motor, std::uint16_t percent) {
-	if (percent > MAX_PERCENT) {
+	if (percent > MAX_SPEED_PERCENT) {
 		std::cerr << "Motor speed must be in range 0-100\n";
 		return false;
 	}
 	const Command command =
 		motor == Motor::M1 ? Command::M1_SPD : Command::M2_SPD;
 	return transfer(command, percent);
+}
+
+bool SPI::set_servo_pulse_us(std::uint16_t pulse_us) {
+	if (pulse_us < MIN_SERVO_PULSE_US || pulse_us > MAX_SERVO_PULSE_US) {
+		std::cerr << "Servo pulse must be in range 1000-2100 us\n";
+		return false;
+	}
+	return transfer(Command::SERVO_PULSE, pulse_us);
 }
 
 bool SPI::set_servo_angle(std::uint16_t angle_deg) {

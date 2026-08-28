@@ -12,6 +12,20 @@ add_test(NAME navigation_corner_sim_test
 
 install(TARGETS navigation_corner_sim_test DESTINATION app)
 
+add_executable(navigation_heading_hold_test
+    navigation_heading_hold_test.cpp
+)
+
+target_link_libraries(navigation_heading_hold_test PRIVATE
+    navigation
+)
+
+add_test(NAME navigation_heading_hold_test
+    COMMAND navigation_heading_hold_test
+)
+
+install(TARGETS navigation_heading_hold_test DESTINATION app)
+
 add_executable(track_map_test
     track_map_test.cpp
 )

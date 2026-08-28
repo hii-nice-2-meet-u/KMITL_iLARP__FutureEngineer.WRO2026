@@ -7,6 +7,7 @@ target_link_libraries(open_challenge_main1 PRIVATE
     lidar_processor
     navigation
     otos
+    spi_master
 )
 
 add_executable(open_challenge_main2
@@ -18,6 +19,7 @@ target_link_libraries(open_challenge_main2 PRIVATE
     lidar_processor
     navigation
     otos
+    spi_master
 )
 
 install(TARGETS

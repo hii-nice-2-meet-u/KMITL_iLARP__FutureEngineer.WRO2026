@@ -96,6 +96,10 @@ struct NavigationConfig {
 
 	float lost_wall_speed_mps{0.25f};
 
+	// Briefly hold the last OTOS heading when the outer wall disappears.
+	// Longer losses fall back to lost_wall_speed_mps with zero steering.
+	float max_heading_hold_s{0.30f};
+
 	// The corner speed is capped by sqrt(max lateral acceleration * radius).
 	// Raise this only after tyre-grip testing on the real competition surface.
 	float max_lateral_acceleration_mps2{1.40f};
@@ -196,6 +200,7 @@ class NavigationController {
 	control::PID speed_pid_;
 
 	std::uint64_t previous_timestamp_us_{0};
+	float last_elapsed_update_s_{0.0f};
 
 	float turn_start_heading_rad_{0.0f};
 	float turn_reference_heading_rad_{0.0f};
@@ -205,6 +210,10 @@ class NavigationController {
 	float turn_entry_steering_rad_{0.0f};
 
 	int turn_trigger_frames_{0};
+
+	float last_valid_wall_heading_rad_{0.0f};
+	float lost_wall_timer_s_{0.0f};
+	bool has_last_valid_wall_heading_{false};
 
 	float conditioned_steering_rad_{0.0f};
 	float conditioned_speed_mps_{0.0f};

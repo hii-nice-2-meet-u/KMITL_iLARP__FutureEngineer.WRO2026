@@ -48,9 +48,15 @@ class SPI {
 	bool enable_motors();
 	bool disable_motors();
 
+	// Signed motor power: -100 to +100. Negative values are encoded as signed
+	// 16-bit two's complement in the frame data field.
+	bool set_motor_power(Motor motor, std::int16_t percent);
+
 	// Accepted range is 0-100. Values outside the range are rejected.
-	bool set_motor_power(Motor motor, std::uint16_t percent);
 	bool set_motor_speed(Motor motor, std::uint16_t percent);
+
+	// Positional servo pulse width: 1000-2100 microseconds.
+	bool set_servo_pulse_us(std::uint16_t pulse_us);
 
 	// Positional servo command: 0-180 degrees, center = 90 degrees.
 	bool set_servo_angle(std::uint16_t angle_deg);
@@ -60,8 +66,8 @@ class SPI {
 
   private:
 	using Frame = std::array<std::uint8_t, 3>;
-
 	bool transfer(Command command, std::uint16_t data, Frame *rx = nullptr);
+
 	bool request(Command command, std::uint16_t data, Frame &response);
 
 	static std::uint16_t decode_data(const Frame &frame);
