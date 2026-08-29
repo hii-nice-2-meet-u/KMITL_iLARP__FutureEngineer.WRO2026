@@ -24,10 +24,6 @@ Tunner::~Tunner() {
 	cv::destroyAllWindows();
 }
 
-// -----------------------------------------------------------------------------
-// Camera
-// -----------------------------------------------------------------------------
-
 bool Tunner::ensure_camera_started() {
 	if (camera_started_) {
 		return true;
@@ -53,10 +49,6 @@ bool Tunner::restart_camera() {
 		camera_started_ = false;
 	}
 
-	/*
-	 * CameraModule stores width/height/fps/AWB in its constructor.
-	 * Re-create it so a changed AWB gain is actually applied.
-	 */
 	camera_module_.reset();
 
 	std::this_thread::sleep_for(std::chrono::milliseconds(150));
@@ -84,32 +76,25 @@ void Tunner::run() {
 	const std::string white_window = "white_tunner_window";
 	const std::string red_window = "red_tunner_window";
 	const std::string green_window = "green_tunner_window";
-	const std::string magenta_window = "magenta_tunner_window";
 
 	cv::namedWindow(white_window, cv::WINDOW_NORMAL);
 	cv::namedWindow(red_window, cv::WINDOW_NORMAL);
 	cv::namedWindow(green_window, cv::WINDOW_NORMAL);
-	cv::namedWindow(magenta_window, cv::WINDOW_NORMAL);
 	cv::namedWindow(TUNE_MASK_WINDOW, cv::WINDOW_NORMAL);
 
 	cv::resizeWindow(white_window, 500, 180);
 	cv::resizeWindow(red_window, 500, 280);
 	cv::resizeWindow(green_window, 500, 280);
-	// cv::resizeWindow(magenta_window, 500, 280);
 
 	cv::resizeWindow(TUNE_MASK_WINDOW, video_width_, video_height_);
 
-	// AWB sliders
 	cv::createTrackbar("AWB R x10", white_window, &awb_gain_r_x10_, 50);
 
 	cv::createTrackbar("AWB B x10", white_window, &awb_gain_b_x10_, 50);
 
-	// HSV sliders
 	create_hsv_trackbars(red_window, red_hsv_);
 
 	create_hsv_trackbars(green_window, green_hsv_);
-
-	// create_hsv_trackbars(magenta_window, magenta_hsv_);
 
 	int previous_r = awb_gain_r_x10_;
 	int previous_b = awb_gain_b_x10_;
@@ -119,9 +104,6 @@ void Tunner::run() {
 	auto last_gain_change = std::chrono::steady_clock::now();
 
 	while (true) {
-		// ---------------------------------------------------------
-		// AWB update
-		// ---------------------------------------------------------
 
 		const int current_r =
 			std::max(1, cv::getTrackbarPos("AWB R x10", white_window));
@@ -161,10 +143,6 @@ void Tunner::run() {
 			}
 		}
 
-		// ---------------------------------------------------------
-		// Camera frame
-		// ---------------------------------------------------------
-
 		TimedFrameData frame_data;
 
 		if (!camera_module_->wait_for_frame(frame_data)) {
@@ -177,24 +155,9 @@ void Tunner::run() {
 
 		cv::Mat result = frame_data.frame.clone();
 
-		// ---------------------------------------------------------
-		// Red overlay
-		// ---------------------------------------------------------
-
 		result = apply_hsv_overlay(result, red_hsv_, cv::Scalar(0, 0, 255));
 
-		// ---------------------------------------------------------
-		// Green overlay
-		// ---------------------------------------------------------
-
 		result = apply_hsv_overlay(result, green_hsv_, cv::Scalar(0, 255, 0));
-
-		// ---------------------------------------------------------
-		// Magenta overlay
-		// ---------------------------------------------------------
-
-		// result =
-		// 	apply_hsv_overlay(result, magenta_hsv_, cv::Scalar(255, 0, 255));
 
 		draw_awb_values(result);
 
@@ -212,26 +175,18 @@ void Tunner::run() {
 			print_hsv("RED", red_hsv_);
 
 			print_hsv("GREEN", green_hsv_);
-
-			print_hsv("MAGENTA", magenta_hsv_);
 		}
 	}
 
 	print_awb();
 	print_hsv("RED", red_hsv_);
 	print_hsv("GREEN", green_hsv_);
-	print_hsv("MAGENTA", magenta_hsv_);
 
 	cv::destroyWindow(white_window);
 	cv::destroyWindow(red_window);
 	cv::destroyWindow(green_window);
-	cv::destroyWindow(magenta_window);
 	cv::destroyWindow(TUNE_MASK_WINDOW);
 }
-
-// -----------------------------------------------------------------------------
-// White balance tuner
-// -----------------------------------------------------------------------------
 
 void Tunner::tune_white() {
 	if (!ensure_camera_started()) {
@@ -281,10 +236,6 @@ void Tunner::tune_white() {
 			last_gain_change = std::chrono::steady_clock::now();
 		}
 
-		/*
-		 * Wait until the slider has stopped moving before restarting
-		 * the camera. This avoids restarting it for every slider tick.
-		 */
 		if (gain_changed) {
 			const auto elapsed =
 				std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -346,10 +297,6 @@ void Tunner::tune_white() {
 	cv::destroyWindow(TUNE_MASK_WINDOW);
 }
 
-// -----------------------------------------------------------------------------
-// HSV public tuners
-// -----------------------------------------------------------------------------
-
 void Tunner::tune_red_hsv() {
 	tune_hsv("red_tunner_window", "RED", red_hsv_, cv::Scalar(0, 0, 255));
 }
@@ -357,15 +304,6 @@ void Tunner::tune_red_hsv() {
 void Tunner::tune_green_hsv() {
 	tune_hsv("green_tunner_window", "GREEN", green_hsv_, cv::Scalar(0, 255, 0));
 }
-
-void Tunner::tune_magenta_hsv() {
-	tune_hsv("magenta_tunner_window", "MAGENTA", magenta_hsv_,
-		cv::Scalar(255, 0, 255));
-}
-
-// -----------------------------------------------------------------------------
-// Generic HSV tuner
-// -----------------------------------------------------------------------------
 
 void Tunner::tune_hsv(const std::string &tunner_window_name,
 	const std::string &color_name, HSVRange &range,
@@ -430,10 +368,6 @@ void Tunner::tune_hsv(const std::string &tunner_window_name,
 	cv::destroyWindow(TUNE_MASK_WINDOW);
 }
 
-// -----------------------------------------------------------------------------
-// HSV trackbars
-// -----------------------------------------------------------------------------
-
 void Tunner::create_hsv_trackbars(
 	const std::string &window_name, HSVRange &range) {
 
@@ -447,10 +381,6 @@ void Tunner::create_hsv_trackbars(
 	cv::createTrackbar("Val Max", window_name, &range.v_max, 255);
 }
 
-// -----------------------------------------------------------------------------
-// HSV overlay
-// -----------------------------------------------------------------------------
-
 cv::Mat Tunner::apply_hsv_overlay(const cv::Mat &frame, const HSVRange &range,
 	const cv::Scalar &overlay_color) const {
 
@@ -463,13 +393,7 @@ cv::Mat Tunner::apply_hsv_overlay(const cv::Mat &frame, const HSVRange &range,
 		cv::inRange(hsv, cv::Scalar(range.h_min, range.s_min, range.v_min),
 			cv::Scalar(range.h_max, range.s_max, range.v_max), mask);
 	} else {
-		/*
-		 * Hue wrap-around.
-		 *
-		 * Example for red:
-		 * H = 170 -> 10
-		 * means 170..179 OR 0..10.
-		 */
+
 		cv::Mat mask_high;
 		cv::Mat mask_low;
 
@@ -490,17 +414,10 @@ cv::Mat Tunner::apply_hsv_overlay(const cv::Mat &frame, const HSVRange &range,
 
 	cv::Mat result = frame.clone();
 
-	/*
-	 * Only pixels inside the selected HSV mask receive the overlay.
-	 */
 	blended.copyTo(result, mask);
 
 	return result;
 }
-
-// -----------------------------------------------------------------------------
-// Debug text
-// -----------------------------------------------------------------------------
 
 void Tunner::draw_hsv_values(cv::Mat &frame, const HSVRange &range) const {
 
@@ -532,10 +449,6 @@ void Tunner::draw_awb_values(cv::Mat &frame) const {
 		cv::Scalar(255, 255, 255), 2);
 }
 
-// -----------------------------------------------------------------------------
-// Control panel
-// -----------------------------------------------------------------------------
-
 void Tunner::show_control_panel(
 	const std::string &window_name, const std::string &title) const {
 
@@ -549,10 +462,6 @@ void Tunner::show_control_panel(
 
 	cv::imshow(window_name, panel);
 }
-
-// -----------------------------------------------------------------------------
-// Print
-// -----------------------------------------------------------------------------
 
 void Tunner::print_hsv(const std::string &name, const HSVRange &range) const {
 
@@ -571,10 +480,6 @@ void Tunner::print_awb() const {
 			  << "AWB_GAIN_B = " << awb_gain_b_ << "\n\n";
 }
 
-// -----------------------------------------------------------------------------
-// Getters
-// -----------------------------------------------------------------------------
-
 float Tunner::awb_gain_r() const noexcept { return awb_gain_r_; }
 
 float Tunner::awb_gain_b() const noexcept { return awb_gain_b_; }
@@ -583,6 +488,4 @@ const HSVRange &Tunner::red_hsv() const noexcept { return red_hsv_; }
 
 const HSVRange &Tunner::green_hsv() const noexcept { return green_hsv_; }
 
-const HSVRange &Tunner::magenta_hsv() const noexcept { return magenta_hsv_; }
-
-} // namespace camera
+}

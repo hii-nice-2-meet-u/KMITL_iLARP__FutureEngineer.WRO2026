@@ -12,6 +12,7 @@ target_include_directories(camera_tuner
 target_link_libraries(camera_tuner
     PRIVATE
         camera_module
+        camera_processor
 )
 
 set_target_properties(camera_tuner PROPERTIES

@@ -6,6 +6,7 @@
 #include <opencv2/opencv.hpp>
 
 #include "camera_module.hpp"
+#include "camera_processor.hpp"
 
 namespace camera {
 
@@ -36,7 +37,6 @@ class Tunner {
 
 	void tune_red_hsv();
 	void tune_green_hsv();
-	void tune_magenta_hsv();
 
 	void stop_camera();
 
@@ -45,7 +45,6 @@ class Tunner {
 
 	[[nodiscard]] const HSVRange &red_hsv() const noexcept;
 	[[nodiscard]] const HSVRange &green_hsv() const noexcept;
-	[[nodiscard]] const HSVRange &magenta_hsv() const noexcept;
 
   private:
 	bool ensure_camera_started();
@@ -83,17 +82,20 @@ class Tunner {
 	float awb_gain_r_{1.2f};
 	float awb_gain_b_{2.8f};
 
-	// Trackbar values: real AWB gain = slider / 10.0f
 	int awb_gain_r_x10_{12};
 	int awb_gain_b_x10_{28};
 
-	HSVRange red_hsv_{170, 10, 70, 255, 50, 255};
+	HSVRange red_hsv_{static_cast<int>(LOWER_RED_2[0]),
+		static_cast<int>(UPPER_RED_1[0]), static_cast<int>(LOWER_RED_1[1]),
+		static_cast<int>(UPPER_RED_1[1]), static_cast<int>(LOWER_RED_1[2]),
+		static_cast<int>(UPPER_RED_1[2])};
 
-	HSVRange green_hsv_{20, 85, 180, 255, 66, 190};
-
-	HSVRange magenta_hsv_{160, 170, 165, 255, 95, 160};
+	HSVRange green_hsv_{static_cast<int>(LOWER_GREEN[0]),
+		static_cast<int>(UPPER_GREEN[0]), static_cast<int>(LOWER_GREEN[1]),
+		static_cast<int>(UPPER_GREEN[1]), static_cast<int>(LOWER_GREEN[2]),
+		static_cast<int>(UPPER_GREEN[2])};
 
 	static constexpr const char *TUNE_MASK_WINDOW = "tune_mask";
 };
 
-} // namespace camera
+}
