@@ -12,19 +12,26 @@ enum class Command : std::uint8_t {
 	NULL_ = 0x00,
 	ECTO_TEST = 0x01,
 
-	M_ENABLE = 0x20,
-	M_DISABLE = 0x21,
-	M1_POW = 0x22,
-	M2_POW = 0x23,
-	M1_DUTY = 0x24,
-	M2_DUTY = 0x25,
-	M1_SPD = 0x26,
-	M2_SPD = 0x27,
+	M_ENABLE = 0x20,  // M_CTRL
+	M_DISABLE = 0x21, // M_CTRL
+	M1_POW = 0x22,	  // M_CTRL
+	M2_POW = 0x23,	  // M_CTRL
+	M1_DUTY = 0x24,	  // M_CTRL
+	M2_DUTY = 0x25,	  // M_CTRL
+
+	M1_SPD = 0x26,		   // M_ENC
+	M2_SPD = 0x27,		   // M_ENC
+	M_Brake = 0x28,		   // M_ENC
+	M_ENC_ENABLE = 0x29,   // M_ENC
+	M_ENC_DISABLE = 0x30,  // M_ENC
+	M_ENC_INVERTED = 0x31, // M_ENC
 
 	SERVO_PULSE = 0x40,
 	SERVO_ANGLE = 0x41,
 
 	VOL_CHECK = 0xA0,
+
+	DEBUG = 0xFF
 };
 
 enum class Motor { M1, M2 };
