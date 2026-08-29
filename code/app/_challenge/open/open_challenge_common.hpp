@@ -26,14 +26,21 @@ inline navigation::NavigationConfig make_navigation_config() {
 	config.normal_speed_mps = 0.85f;
 	config.turning_speed_mps = 0.65f;
 	config.approach_distance_m = 0.90f;
+
 	config.stanley.k = 0.85f;
 	config.stanley.max_steering_rad = 45.0f * PI / 180.0f;
 	config.stanley.heading_pid.kp = 1.00f;
 	config.stanley.heading_pid.ki = 0.12f;
 	config.stanley.heading_pid.kd = 0.025f;
+
+	config.turn_heading_pid.kp = 0.80f;
+	config.turn_heading_pid.ki = 0.08f;
+	config.turn_heading_pid.kd = 0.020f;
+
 	config.speed_pid.kp = 4.0f;
 	config.speed_pid.ki = 1.0f;
 	config.speed_pid.kd = 0.04f;
+
 	config.total_turns = 12;
 	return config;
 }

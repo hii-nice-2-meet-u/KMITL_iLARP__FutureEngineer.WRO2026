@@ -16,7 +16,7 @@ struct ActuatorConfig {
 
 	float full_scale_speed_mps{0.85f};
 	std::uint16_t minimum_moving_power{35};
-	std::uint16_t maximum_drive_percent{60};
+	std::uint16_t maximum_drive_percent{100};
 
 	std::uint16_t servo_min_pulse_us{1000};
 	std::uint16_t servo_max_pulse_us{2100};

@@ -114,8 +114,8 @@ ProcessedLidarData LidarProcessor::process(
 }
 
 bool LidarProcessor::is_valid_point(const LidarPoint &point) const {
-	if (point.quality < 1) return false;
-	if (point.distance_m < 0.01f) return false;
+	if (point.quality < 10) return false;
+	if (point.distance_m < 0.015f) return false;
 
 	// const bool front_region =
 	// 	point.angle_deg >= 75.0f && point.angle_deg <= 285.0f;
