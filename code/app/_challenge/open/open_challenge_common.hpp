@@ -47,14 +47,8 @@ inline navigation::NavigationConfig make_navigation_config() {
 
 inline lidar::ProcessedLidarData process_scan(lidar::LidarProcessor &processor,
 	const TimedLidarData &scan, float wall_correction_rad) {
-	return processor.process(scan, wall_correction_rad,
-		4,		// min_segment_point
-		0.035f, // max_line_error_m
-		0.12f,	// max_point_gap_m
-		5.0f,	// max_angle_diff deg
-		0.04f,	// max_collinear_error_m
-		0.10f	// max_segment_gap_m
-	);
+	return processor.process(
+		scan, wall_correction_rad, 4, 0.035f, 0.12f, 5.0f, 0.04f, 0.10f);
 }
 
 inline const char *mode_name(navigation::NavigationMode mode) {
@@ -95,4 +89,4 @@ inline void print_command(const navigation::NavigationResult &result,
 			  << "us\n";
 }
 
-} // namespace open_challenge
+}

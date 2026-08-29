@@ -33,7 +33,7 @@ std::optional<long> parse_value(const char *text) {
 	return value;
 }
 
-} // namespace
+}
 
 int main(int argc, char **argv) {
 	spi::SPI bus;

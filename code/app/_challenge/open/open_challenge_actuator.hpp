@@ -50,8 +50,6 @@ class ActuatorOutput {
 		}
 		initialized_ = true;
 
-		// Establish a known safe state before any sensor/controller output is
-		// accepted. Servo centering happens while motors are disabled.
 		if (!write_motor_power(0) ||
 			!bus_.set_servo_pulse_us(to_servo_pulse_us(0.0f))) {
 			emergency_stop();
@@ -85,7 +83,6 @@ class ActuatorOutput {
 		const std::int16_t power_percent =
 			to_power_percent(command.target_speed_mps);
 
-		// Point the wheels before applying the new forward command.
 		if (!bus_.set_servo_pulse_us(servo_pulse_us) ||
 			!write_motor_power(power_percent)) {
 			emergency_stop();
@@ -165,4 +162,4 @@ class ActuatorOutput {
 	bool initialized_{false};
 };
 
-} // namespace open_challenge
+}

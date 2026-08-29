@@ -30,7 +30,7 @@ Perception::Perception(PerceptionConfig config) : config_(config) {
 
 PerceptionData Perception::process(const lidar::ProcessedLidarData &lidar_data,
 	const camera::ProcessedCameraData &camera_data,
-	const navigation::MapPose &vehicle_pose) const {
+	const std::optional<navigation::MapPose> &vehicle_pose) const {
 	PerceptionData output;
 	output.timestamp_us = lidar_data.timestamp_us;
 	output.track_walls = lidar_data.walls;
@@ -39,7 +39,8 @@ PerceptionData Perception::process(const lidar::ProcessedLidarData &lidar_data,
 	auto &diagnostics = output.diagnostics;
 	diagnostics.lidar_timestamp_us = lidar_data.timestamp_us;
 	diagnostics.camera_timestamp_us = camera_data.timestamp_us;
-	diagnostics.pose_valid = valid_pose(vehicle_pose);
+	diagnostics.pose_valid =
+		vehicle_pose.has_value() && valid_pose(*vehicle_pose);
 	diagnostics.lidar_input_count = lidar_data.obstacles.size();
 	diagnostics.camera_input_count = camera_data.objects.size();
 	diagnostics.sensor_time_difference_us =
@@ -227,20 +228,20 @@ RobotPoint Perception::lidar_to_robot(const cv::Point2f &point) const {
 	};
 }
 
-std::optional<WorldPoint> Perception::robot_to_world(
-	const RobotPoint &point, const navigation::MapPose &pose) const {
-	if (!valid_pose(pose)) {
+std::optional<WorldPoint> Perception::robot_to_world(const RobotPoint &point,
+	const std::optional<navigation::MapPose> &pose) const {
+	if (!pose.has_value() || !valid_pose(*pose)) {
 		return std::nullopt;
 	}
 
 	// OTOS/world convention: heading 0 points along +world X and positive
 	// heading turns toward +world Y. Robot-right is therefore -world Y at
 	// heading 0.
-	const float cosine = std::cos(pose.heading_rad);
-	const float sine = std::sin(pose.heading_rad);
+	const float cosine = std::cos(pose->heading_rad);
+	const float sine = std::sin(pose->heading_rad);
 	return WorldPoint{
-		pose.x_m + point.forward_m * cosine + point.right_m * sine,
-		pose.y_m + point.forward_m * sine - point.right_m * cosine,
+		pose->x_m + point.forward_m * cosine + point.right_m * sine,
+		pose->y_m + point.forward_m * sine - point.right_m * cosine,
 	};
 }
 

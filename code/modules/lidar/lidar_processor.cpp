@@ -514,12 +514,12 @@ bool LidarProcessor::is_same_segment(
 		return dx * dx + dy * dy < EPSILON_M * EPSILON_M;
 	};
 
-	// ปกติ
+	// Match endpoints in the same order.
 	if (same_point(a.start, b->start) && same_point(a.end, b->end)) {
 		return true;
 	}
 
-	// start/end กลับด้าน
+	// Match the same segment when its endpoints are reversed.
 	if (same_point(a.start, b->end) && same_point(a.end, b->start)) {
 		return true;
 	}
@@ -568,16 +568,22 @@ std::vector<ObstacleObject> LidarProcessor::detect_obstacles(
 
 	std::vector<ObstacleObject> obstacles;
 
-	constexpr float WALL_REJECT_DISTANCE_M = 0.05f;
-	constexpr float WALL_EXTENSION_M = 0.09f;
+	// Reject returns this close to a resolved wall as wall reflections.
+	constexpr float WALL_REJECT_DISTANCE_M = 0.08f;
+	// Extend the finite front-wall segment to reject fragments near its ends.
+	constexpr float WALL_EXTENSION_M = 0.20f;
 
+	// Join consecutive scan points when their Cartesian gap is at most 7 cm.
 	constexpr float CLUSTER_GAP_M = 0.07f;
 
+	// Require enough LiDAR returns to reject isolated measurement noise.
 	constexpr std::size_t MIN_CLUSTER_POINTS = 3;
 
-	constexpr float MIN_OBSTACLE_WIDTH_M = 0.035f;
+	// Accept clusters whose measured span matches the expected obstacle size.
+	constexpr float MIN_OBSTACLE_WIDTH_M = 0.025f;
 	constexpr float MAX_OBSTACLE_WIDTH_M = 0.07f;
 
+	// Ignore points at or behind the LiDAR origin in the robot frame.
 	constexpr float MIN_FORWARD_M = 0.03f;
 
 	std::vector<CartesianPoint> candidates;

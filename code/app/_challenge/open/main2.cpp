@@ -13,7 +13,7 @@ std::atomic_bool stop_requested{false};
 
 void request_stop(int) { stop_requested.store(true); }
 
-} // namespace
+}
 
 int main() {
 	std::signal(SIGINT, request_stop);

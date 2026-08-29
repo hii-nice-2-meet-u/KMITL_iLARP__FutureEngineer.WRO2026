@@ -62,17 +62,24 @@ class CameraProcessor {
 	float calculate_bearing(float pixel_x) const;
 
   private:
-	float fx = 1268.97425f;
-	float cx = 317.980325f;
+	// Horizontal intrinsics calibrated for the 1920 x 1080 capture mode.
+	// fx converts horizontal pixel displacement to a ray angle; cx is the
+	// calibrated optical center used as the zero-bearing pixel.
+	float fx = 1418.29334f;
+	float cx = 973.219296f;
 
+	// Reject color regions smaller than this contour area in pixels.
 	double min_contour_area{650.0};
 
+	// Enforce the minimum traffic-marker bounding-box dimensions in pixels.
 	int min_width{15};
 	int min_height{25};
 
+	// Accept only marker-like width-to-height proportions.
 	float min_aspect_ratio{0.5f};
 	float max_aspect_ratio{1.5f};
 
+	// Require the color contour to occupy this fraction of its bounding box.
 	float min_fill_ratio{0.7f};
 };
 

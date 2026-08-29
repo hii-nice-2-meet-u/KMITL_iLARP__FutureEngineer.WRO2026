@@ -8,8 +8,8 @@ int main() {
 	cv::namedWindow(win_name, cv::WINDOW_NORMAL);
 	cv::resizeWindow(win_name, 640, 640);
 
-	int r_slider = 10; // 0.0 - 5.0 (0 - 50)
-	int b_slider = 10; // 0.0 - 5.0 (0 - 50
+	int r_slider = 10;
+	int b_slider = 10;
 
 	cv::createTrackbar("Red Gain x10", win_name, &r_slider, 50);
 	cv::createTrackbar("Blue Gain x10", win_name, &b_slider, 50);
@@ -28,8 +28,7 @@ int main() {
 	int prev_r = r_slider, prev_b = b_slider;
 
 	while (true) {
-		if (!camera.getVideoFrame(frame, 1000) || frame.empty())
-			continue;
+		if (!camera.getVideoFrame(frame, 1000) || frame.empty()) continue;
 
 		cv::flip(frame, frame, 0);
 		cv::imshow(win_name, frame);
@@ -49,8 +48,7 @@ int main() {
 		}
 
 		int key = cv::waitKey(1);
-		if (key == 27)
-			break;
+		if (key == 27) break;
 	}
 	camera.stopVideo();
 	cv::destroyAllWindows();

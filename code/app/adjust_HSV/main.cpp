@@ -33,7 +33,7 @@ class HSVRangeHighlighter {
 
 			int key = cv::waitKey(1);
 
-			if (key == 27) { // ESC
+			if (key == 27) {
 				break;
 			}
 		}
@@ -78,7 +78,7 @@ class HSVRangeHighlighter {
 						std::min(current_frame, total_frames - 1));
 				}
 			} else {
-				// User moved Position slider
+
 				int requested_frame =
 					cv::getTrackbarPos("Position", window_name_);
 
@@ -105,7 +105,6 @@ class HSVRangeHighlighter {
 				paused = !paused;
 			}
 
-			// Easier than relying on OpenCV arrow key codes.
 			if (paused && key == 'a') {
 				current_frame = std::max(0, current_frame - 1);
 
@@ -137,7 +136,6 @@ class HSVRangeHighlighter {
 	void adjustHSVCamera() {
 		lccv::PiCamera camera;
 
-		// Start with a resolution suitable for HSV tuning.
 		camera.options->video_width = 640;
 		camera.options->video_height = 640;
 		camera.options->framerate = 100;
@@ -172,7 +170,7 @@ class HSVRangeHighlighter {
 
 			const int key = cv::waitKey(1);
 
-			if (key == 27) { // ESC
+			if (key == 27) {
 				break;
 			}
 

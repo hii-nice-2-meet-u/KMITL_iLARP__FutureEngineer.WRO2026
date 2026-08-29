@@ -67,7 +67,7 @@ bool get_key(char &key) {
 	return read(STDIN_FILENO, &key, 1) == 1;
 }
 
-} // namespace
+}
 
 int main() {
 	std::signal(SIGINT, signal_handler);
@@ -111,10 +111,6 @@ int main() {
 
 	while (running) {
 
-		// -------------------------
-		// Keyboard
-		// -------------------------
-
 		char key;
 
 		if (get_key(key)) {
@@ -149,10 +145,6 @@ int main() {
 				break;
 			}
 		}
-
-		// -------------------------
-		// Read OTOS
-		// -------------------------
 
 		sfe_otos_pose2d_t pos;
 		sfe_otos_pose2d_t vel;

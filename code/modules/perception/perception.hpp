@@ -1,4 +1,4 @@
-#pragma once
+	#pragma once
 
 #include <cstddef>
 #include <cstdint>
@@ -122,7 +122,14 @@ class Perception {
 
 	PerceptionData process(const lidar::ProcessedLidarData &lidar_data,
 		const camera::ProcessedCameraData &camera_data,
-		const navigation::MapPose &vehicle_pose) const;
+		const std::optional<navigation::MapPose> &vehicle_pose) const;
+
+	PerceptionData process(const lidar::ProcessedLidarData &lidar_data,
+		const camera::ProcessedCameraData &camera_data,
+		const navigation::MapPose &vehicle_pose) const {
+		return process(lidar_data, camera_data,
+			std::optional<navigation::MapPose>{vehicle_pose});
+	}
 
 	const PerceptionConfig &config() const { return config_; }
 
@@ -137,8 +144,8 @@ class Perception {
 	bool valid_lidar_object(const lidar::ObstacleObject &object) const;
 	static bool valid_camera_object(const camera::CameraObject &object);
 	RobotPoint lidar_to_robot(const cv::Point2f &point) const;
-	std::optional<WorldPoint> robot_to_world(
-		const RobotPoint &point, const navigation::MapPose &pose) const;
+	std::optional<WorldPoint> robot_to_world(const RobotPoint &point,
+		const std::optional<navigation::MapPose> &pose) const;
 	float predicted_camera_bearing(const RobotPoint &point) const;
 
 	PerceptionConfig config_;

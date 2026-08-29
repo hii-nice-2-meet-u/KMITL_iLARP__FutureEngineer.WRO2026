@@ -13,10 +13,6 @@ int main() {
 
 	system(mkdir_cmd.c_str());
 
-	// -------------------------------------------------------------------------
-	// Camera
-	// -------------------------------------------------------------------------
-
 	camera::CameraModule camera_module(640, 640, 90, 1.8, 2.8);
 
 	if (!camera_module.start()) {
@@ -41,11 +37,9 @@ int main() {
 			continue;
 		}
 
-		// Process camera frame
 		const camera::ProcessedCameraData processed =
 			camera_processor.process(frame_data);
 
-		// Clone because this image is only for debug drawing.
 		cv::Mat display_frame = frame_data.frame.clone();
 
 		for (const auto &object : processed.objects) {
