@@ -13,7 +13,9 @@
 #include "lidar_processor.hpp"
 #include "navigation_controller.hpp"
 #include "otos.hpp"
+#include "telemetry_logger.hpp"
 #include "track_map.hpp"
+#include "wall_logger.hpp"
 
 namespace {
 
@@ -587,6 +589,7 @@ void draw_debug_panel(cv::Mat &map, const lidar::ProcessedLidarData &processed,
 }
 
 int main() {
+	logging::install_stop_signal_handlers();
 
 	lidar::LidarModule lidar("/dev/ttyAMA0", 1000000);
 
@@ -663,6 +666,12 @@ int main() {
 
 	std::cout << "LiDAR + OTOS ready\n";
 
+	const std::string run_directory = logging::make_run_directory();
+	logging::TelemetryLogger telemetry_log(run_directory);
+	logging::WallLogger wall_log(run_directory);
+	std::optional<logging::EventLogger> event_log;
+	std::cout << "Logging to " << run_directory << '\n';
+
 	cv::Mat debug_map(MAP_HEIGHT, MAP_WIDTH, CV_8UC3, cv::Scalar(0, 0, 0));
 
 	bool nav_initialized = false;
@@ -673,6 +682,7 @@ int main() {
 		navigation::NavigationMode::SEARCH_DIRECTION;
 
 	std::optional<DrivingDirection> previous_direction;
+	bool previous_heading_hold_active = false;
 
 	std::cout << "\n"
 			  << "==========================================\n"
@@ -686,6 +696,9 @@ int main() {
 			  << "==========================================\n\n";
 
 	while (true) {
+		if (logging::stop_requested()) {
+			break;
+		}
 
 		TimedLidarData scan;
 
@@ -716,6 +729,10 @@ int main() {
 
 		const float speed_mps = std::hypot(vel.x, vel.y);
 
+		if (!event_log.has_value()) {
+			event_log.emplace(run_directory, scan.timestamp_us);
+		}
+
 		if (!nav_initialized) {
 
 			navigation.reset(heading_rad);
@@ -736,8 +753,12 @@ int main() {
 		const auto processed = lidar_processor.process(
 			scan, wall_correction_rad, 4, 0.035f, 0.12f, 5.0f, 0.04f, 0.10f);
 
+		const navigation::MapPose map_pose{pos.x, pos.y, heading_rad};
+		const auto replay_hint =
+			track_map.replay_hint(map_pose, navigation.state().corner_index);
+
 		const auto nav_result =
-			navigation.update(processed, heading_rad, speed_mps);
+			navigation.update(processed, heading_rad, speed_mps, replay_hint);
 
 		const auto process_end = std::chrono::steady_clock::now();
 
@@ -747,7 +768,6 @@ int main() {
 				.count();
 
 		const auto &state = navigation.state();
-		const navigation::MapPose map_pose{pos.x, pos.y, heading_rad};
 
 		if (state.direction.has_value()) {
 			track_map.set_direction(*state.direction);
@@ -762,6 +782,8 @@ int main() {
 			track_map.record_corner_entry(state.corner_index,
 				{map_pose, learned_trigger_m, nav_config.corner_radius_m,
 					nav_result.command.target_speed_mps});
+			event_log->event(scan.timestamp_us, state.lap, state.corner_index,
+				"corner entry learned");
 			std::cout << "[MAP] learned corner " << state.corner_index
 					  << " entry at (" << pos.x << ", " << pos.y << ")\n";
 		}
@@ -772,20 +794,32 @@ int main() {
 				(state.corner_index + navigation::TRACK_CORNER_COUNT - 1) %
 				navigation::TRACK_CORNER_COUNT;
 			track_map.record_corner_exit(completed_corner, map_pose);
+			event_log->event(scan.timestamp_us, state.lap, completed_corner,
+				"corner exit learned");
 			std::cout << "[MAP] learned corner " << completed_corner
 					  << " exit; map " << track_map.learned_corner_count()
 					  << "/4\n";
 		}
 
-		const auto replay_hint =
-			track_map.replay_hint(map_pose, state.corner_index);
-
 		if (state.mode != previous_mode) {
 
 			std::cout << "\n[MODE] " << mode_to_string(previous_mode) << " -> "
 					  << mode_to_string(state.mode) << '\n';
+			event_log->event(scan.timestamp_us, state.lap, state.corner_index,
+				std::string("MODE ") +
+					logging::navigation_mode_name(previous_mode) + " -> " +
+					logging::navigation_mode_name(state.mode));
 
 			previous_mode = state.mode;
+		}
+
+		if (nav_result.debug.heading_hold_active !=
+			previous_heading_hold_active) {
+			event_log->fault(scan.timestamp_us,
+				nav_result.debug.heading_hold_active
+					? "outer wall lost, heading hold engaged"
+					: "outer wall reacquired, heading hold released");
+			previous_heading_hold_active = nav_result.debug.heading_hold_active;
 		}
 
 		if (state.direction != previous_direction) {
@@ -804,6 +838,12 @@ int main() {
 		}
 
 		previous_timestamp_us = scan.timestamp_us;
+
+		telemetry_log.record(
+			logging::make_telemetry_row(scan.timestamp_us, map_pose, speed_mps,
+				state, nav_result, processed.obstacles.size()));
+		wall_log.record(
+			processed.walls, state.mode, map_pose, scan.timestamp_us);
 
 		debug_map.setTo(cv::Scalar(0, 0, 0));
 
@@ -849,6 +889,8 @@ int main() {
 		}
 
 		if (key == 'r' || key == 'R') {
+			event_log->event(scan.timestamp_us, state.lap, state.corner_index,
+				"manual navigation reset");
 
 			navigation.reset(heading_rad);
 			track_map.reset();
@@ -866,6 +908,20 @@ int main() {
 	lidar.stop();
 
 	cv::destroyAllWindows();
+
+	const bool corners_ok = logging::dump_corners(run_directory, track_map);
+	const bool telemetry_ok = telemetry_log.flush();
+	const bool walls_ok = wall_log.flush();
+	const bool events_ok = event_log.has_value() ? event_log->flush() : true;
+	if (!corners_ok || !telemetry_ok || !walls_ok || !events_ok) {
+		std::cerr << "Logging write failure; run data may be incomplete\n";
+	}
+	if (telemetry_log.dropped_row_count() > 0 ||
+		wall_log.dropped_row_count() > 0) {
+		std::cerr << "Logging queue overflow: telemetry="
+				  << telemetry_log.dropped_row_count()
+				  << " walls=" << wall_log.dropped_row_count() << '\n';
+	}
 
 	return 0;
 }

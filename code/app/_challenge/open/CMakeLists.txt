@@ -8,6 +8,7 @@ target_link_libraries(open_challenge_main1 PRIVATE
     navigation
     otos
     spi_master
+    logging
 )
 
 add_executable(open_challenge_main2
@@ -20,6 +21,7 @@ target_link_libraries(open_challenge_main2 PRIVATE
     navigation
     otos
     spi_master
+    logging
 )
 
 install(TARGETS

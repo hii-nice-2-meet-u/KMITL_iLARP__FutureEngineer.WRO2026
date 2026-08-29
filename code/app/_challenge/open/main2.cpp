@@ -2,16 +2,22 @@
 #include <csignal>
 #include <cstdint>
 #include <iostream>
+#include <optional>
 
 #include "open_challenge_actuator.hpp"
 #include "open_challenge_common.hpp"
+#include "telemetry_logger.hpp"
 #include "track_map.hpp"
+#include "wall_logger.hpp"
 
 namespace {
 
 std::atomic_bool stop_requested{false};
 
-void request_stop(int) { stop_requested.store(true); }
+void request_stop(int) {
+	stop_requested.store(true);
+	logging::notify_stop_requested();
+}
 
 }
 
@@ -62,10 +68,17 @@ int main() {
 		return 1;
 	}
 
+	const std::string run_directory = logging::make_run_directory();
+	logging::TelemetryLogger telemetry_log(run_directory);
+	logging::WallLogger wall_log(run_directory);
+	std::optional<logging::EventLogger> event_log;
+	std::cout << "Logging to " << run_directory << '\n';
+
 	bool navigation_initialized = false;
 	std::uint64_t last_log_timestamp_us = 0;
 	navigation::NavigationMode previous_mode =
 		navigation::NavigationMode::SEARCH_DIRECTION;
+	bool previous_heading_hold_active = false;
 
 	while (!stop_requested.load()) {
 		TimedLidarData scan;
@@ -109,6 +122,10 @@ int main() {
 				<< "Actuators armed after first valid LiDAR + OTOS frame\n";
 		}
 
+		if (!event_log.has_value()) {
+			event_log.emplace(run_directory, scan.timestamp_us);
+		}
+
 		const navigation::MapPose map_pose{position.x, position.y, heading_rad};
 		const auto replay_hint =
 			track_map.replay_hint(map_pose, navigation.state().corner_index);
@@ -120,6 +137,21 @@ int main() {
 		const auto result =
 			navigation.update(processed, heading_rad, speed_mps, replay_hint);
 		const auto &state = navigation.state();
+
+		if (state.mode != previous_mode) {
+			event_log->event(scan.timestamp_us, state.lap, state.corner_index,
+				std::string("MODE ") +
+					logging::navigation_mode_name(previous_mode) + " -> " +
+					logging::navigation_mode_name(state.mode));
+		}
+
+		if (result.debug.heading_hold_active != previous_heading_hold_active) {
+			event_log->fault(scan.timestamp_us,
+				result.debug.heading_hold_active
+					? "outer wall lost, heading hold engaged"
+					: "outer wall reacquired, heading hold released");
+			previous_heading_hold_active = result.debug.heading_hold_active;
+		}
 
 		if (state.direction.has_value()) {
 			track_map.set_direction(*state.direction);
@@ -134,6 +166,8 @@ int main() {
 			track_map.record_corner_entry(state.corner_index,
 				{map_pose, learned_trigger_m, navigation_config.corner_radius_m,
 					result.command.target_speed_mps});
+			event_log->event(scan.timestamp_us, state.lap, state.corner_index,
+				"corner entry learned");
 			std::cout << "[MAP] corner " << state.corner_index
 					  << " entry x=" << position.x << " y=" << position.y
 					  << '\n';
@@ -145,6 +179,8 @@ int main() {
 				(state.corner_index + navigation::TRACK_CORNER_COUNT - 1) %
 				navigation::TRACK_CORNER_COUNT;
 			track_map.record_corner_exit(completed_corner, map_pose);
+			event_log->event(scan.timestamp_us, state.lap, completed_corner,
+				"corner exit learned");
 			std::cout << "[MAP] corner " << completed_corner << " complete; "
 					  << track_map.learned_corner_count() << "/4 learned\n";
 			if (track_map.ready_for_replay() && state.lap == 1) {
@@ -152,20 +188,29 @@ int main() {
 			}
 		}
 
-		if (state.mode == navigation::NavigationMode::FINISHED) {
+		const bool finished =
+			state.mode == navigation::NavigationMode::FINISHED;
+		if (finished) {
 			actuators.emergency_stop();
-			const auto &telemetry = actuators.telemetry();
+		} else if (!actuators.apply(result.command)) {
+			std::cerr << "SPI actuator command failed; emergency stop\n";
+			break;
+		}
+		const auto &telemetry = actuators.telemetry();
+		const logging::OutputSnapshot output{
+			telemetry.power_percent, telemetry.servo_pulse_us};
+		telemetry_log.record(
+			logging::make_telemetry_row(scan.timestamp_us, map_pose, speed_mps,
+				state, result, processed.obstacles.size(), output));
+		wall_log.record(
+			processed.walls, state.mode, map_pose, scan.timestamp_us);
+
+		if (finished) {
 			open_challenge::print_command(result, state, heading_rad, speed_mps,
 				telemetry.power_percent, telemetry.servo_pulse_us);
 			std::cout << "Open Challenge complete: 3 laps; M1 power=0\n";
 			break;
 		}
-
-		if (!actuators.apply(result.command)) {
-			std::cerr << "SPI actuator command failed; emergency stop\n";
-			break;
-		}
-		const auto &telemetry = actuators.telemetry();
 
 		if (last_log_timestamp_us == 0 ||
 			scan.timestamp_us - last_log_timestamp_us >= 250000) {
@@ -189,6 +234,19 @@ int main() {
 	actuators.emergency_stop();
 	actuators.close();
 	lidar.stop();
+	const bool corners_ok = logging::dump_corners(run_directory, track_map);
+	const bool telemetry_ok = telemetry_log.flush();
+	const bool walls_ok = wall_log.flush();
+	const bool events_ok = event_log.has_value() ? event_log->flush() : true;
+	if (!corners_ok || !telemetry_ok || !walls_ok || !events_ok) {
+		std::cerr << "Logging write failure; run data may be incomplete\n";
+	}
+	if (telemetry_log.dropped_row_count() > 0 ||
+		wall_log.dropped_row_count() > 0) {
+		std::cerr << "Logging queue overflow: telemetry="
+				  << telemetry_log.dropped_row_count()
+				  << " walls=" << wall_log.dropped_row_count() << '\n';
+	}
 	std::cout << "Stopped safely; M1 power=0\n";
 	return 0;
 }

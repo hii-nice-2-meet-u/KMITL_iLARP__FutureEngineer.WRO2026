@@ -2,15 +2,21 @@
 #include <csignal>
 #include <cstdint>
 #include <iostream>
+#include <optional>
 
 #include "open_challenge_actuator.hpp"
 #include "open_challenge_common.hpp"
+#include "telemetry_logger.hpp"
+#include "wall_logger.hpp"
 
 namespace {
 
 std::atomic_bool stop_requested{false};
 
-void request_stop(int) { stop_requested.store(true); }
+void request_stop(int) {
+	stop_requested.store(true);
+	logging::notify_stop_requested();
+}
 
 }
 
@@ -58,8 +64,17 @@ int main() {
 		return 1;
 	}
 
+	const std::string run_directory = logging::make_run_directory();
+	logging::TelemetryLogger telemetry_log(run_directory);
+	logging::WallLogger wall_log(run_directory);
+	std::optional<logging::EventLogger> event_log;
+	std::cout << "Logging to " << run_directory << '\n';
+
 	bool navigation_initialized = false;
 	std::uint64_t last_log_timestamp_us = 0;
+	navigation::NavigationMode previous_mode =
+		navigation::NavigationMode::SEARCH_DIRECTION;
+	bool previous_heading_hold_active = false;
 
 	while (!stop_requested.load()) {
 		TimedLidarData scan;
@@ -93,6 +108,7 @@ int main() {
 
 		if (!navigation_initialized) {
 			navigation.reset(heading_rad);
+			previous_mode = navigation.state().mode;
 			if (!actuators.arm()) {
 				std::cerr << "Motor arm failed; M1 power stop attempted\n";
 				break;
@@ -102,6 +118,10 @@ int main() {
 				<< "Actuators armed after first valid LiDAR + OTOS frame\n";
 		}
 
+		if (!event_log.has_value()) {
+			event_log.emplace(run_directory, scan.timestamp_us);
+		}
+
 		const float wall_correction_rad = open_challenge::normalize_angle(
 			heading_rad - navigation.state().target_heading_rad);
 		const auto processed = open_challenge::process_scan(
@@ -109,21 +129,47 @@ int main() {
 		const auto result =
 			navigation.update(processed, heading_rad, speed_mps);
 		const auto &state = navigation.state();
+		const navigation::MapPose map_pose{position.x, position.y, heading_rad};
 
-		if (state.mode == navigation::NavigationMode::FINISHED) {
+		if (state.mode != previous_mode) {
+			event_log->event(scan.timestamp_us, state.lap, state.corner_index,
+				std::string("MODE ") +
+					logging::navigation_mode_name(previous_mode) + " -> " +
+					logging::navigation_mode_name(state.mode));
+			previous_mode = state.mode;
+		}
+
+		if (result.debug.heading_hold_active != previous_heading_hold_active) {
+			event_log->fault(scan.timestamp_us,
+				result.debug.heading_hold_active
+					? "outer wall lost, heading hold engaged"
+					: "outer wall reacquired, heading hold released");
+			previous_heading_hold_active = result.debug.heading_hold_active;
+		}
+
+		const bool finished =
+			state.mode == navigation::NavigationMode::FINISHED;
+		if (finished) {
 			actuators.emergency_stop();
-			const auto &telemetry = actuators.telemetry();
+		} else if (!actuators.apply(result.command)) {
+			std::cerr << "SPI actuator command failed; emergency stop\n";
+			break;
+		}
+		const auto &telemetry = actuators.telemetry();
+		const logging::OutputSnapshot output{
+			telemetry.power_percent, telemetry.servo_pulse_us};
+		telemetry_log.record(
+			logging::make_telemetry_row(scan.timestamp_us, map_pose, speed_mps,
+				state, result, processed.obstacles.size(), output));
+		wall_log.record(
+			processed.walls, state.mode, map_pose, scan.timestamp_us);
+
+		if (finished) {
 			open_challenge::print_command(result, state, heading_rad, speed_mps,
 				telemetry.power_percent, telemetry.servo_pulse_us);
 			std::cout << "Open Challenge complete: 12 turns; M1 power=0\n";
 			break;
 		}
-
-		if (!actuators.apply(result.command)) {
-			std::cerr << "SPI actuator command failed; emergency stop\n";
-			break;
-		}
-		const auto &telemetry = actuators.telemetry();
 
 		if (last_log_timestamp_us == 0 ||
 			scan.timestamp_us - last_log_timestamp_us >= 250000) {
@@ -136,6 +182,18 @@ int main() {
 	actuators.emergency_stop();
 	actuators.close();
 	lidar.stop();
+	const bool telemetry_ok = telemetry_log.flush();
+	const bool walls_ok = wall_log.flush();
+	const bool events_ok = event_log.has_value() ? event_log->flush() : true;
+	if (!telemetry_ok || !walls_ok || !events_ok) {
+		std::cerr << "Logging write failure; run data may be incomplete\n";
+	}
+	if (telemetry_log.dropped_row_count() > 0 ||
+		wall_log.dropped_row_count() > 0) {
+		std::cerr << "Logging queue overflow: telemetry="
+				  << telemetry_log.dropped_row_count()
+				  << " walls=" << wall_log.dropped_row_count() << '\n';
+	}
 	std::cout << "Stopped safely; M1 power=0\n";
 	return 0;
 }
