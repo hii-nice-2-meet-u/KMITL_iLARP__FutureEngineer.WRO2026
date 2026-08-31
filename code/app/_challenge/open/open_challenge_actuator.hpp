@@ -4,6 +4,8 @@
 #include <cmath>
 #include <cstdint>
 #include <iostream>
+#include <limits>
+#include <optional>
 
 #include "navigation_state.hpp"
 #include "spi_master.hpp"
@@ -14,18 +16,18 @@ struct ActuatorConfig {
 	std::uint8_t spi_chip_select{0};
 	std::uint32_t spi_speed_hz{15'000'000};
 
-	float full_scale_speed_mps{0.85f};
-	std::uint16_t minimum_moving_power{35};
-	std::uint16_t maximum_drive_percent{100};
+	float wheel_diameter_m{0.053f};
+	std::uint16_t maximum_wheel_rpm{1500};
 
 	std::uint16_t servo_min_pulse_us{1000};
 	std::uint16_t servo_max_pulse_us{2100};
+	std::uint16_t maximum_servo_step_us{500};
 	float steering_to_servo_sign{1.0f};
 	float maximum_wheel_angle_deg{45.0f};
 };
 
 struct ActuatorTelemetry {
-	std::int16_t power_percent{0};
+	std::int16_t wheel_rpm{0};
 	std::uint16_t servo_pulse_us{1550};
 	bool armed{false};
 };
@@ -36,7 +38,7 @@ class ActuatorOutput {
 
 	~ActuatorOutput() {
 		if (initialized_) {
-			emergency_stop();
+			close();
 		}
 	}
 
@@ -50,7 +52,7 @@ class ActuatorOutput {
 		}
 		initialized_ = true;
 
-		if (!write_motor_power(0) ||
+		if (!write_motor_rpm(0) ||
 			!bus_.set_servo_pulse_us(to_servo_pulse_us(0.0f))) {
 			emergency_stop();
 			return false;
@@ -65,7 +67,7 @@ class ActuatorOutput {
 		if (!initialized_) {
 			return false;
 		}
-		if (!write_motor_power(0)) {
+		if (!write_motor_rpm(0)) {
 			emergency_stop();
 			return false;
 		}
@@ -78,19 +80,23 @@ class ActuatorOutput {
 			return false;
 		}
 
-		const std::uint16_t servo_pulse_us =
+		const std::uint16_t target_servo_pulse_us =
 			to_servo_pulse_us(command.steering_rad);
-		const std::int16_t power_percent =
-			to_power_percent(command.target_speed_mps);
+		const std::uint16_t servo_pulse_us =
+			limit_servo_pulse_step(target_servo_pulse_us);
+		const std::int16_t wheel_rpm = to_wheel_rpm(command.target_speed_mps);
 
-		if (!bus_.set_servo_pulse_us(servo_pulse_us) ||
-			!write_motor_power(power_percent)) {
+		if (!bus_.set_servo_pulse_us(servo_pulse_us)) {
+			emergency_stop();
+			return false;
+		}
+		if (wheel_rpm != telemetry_.wheel_rpm && !write_motor_rpm(wheel_rpm)) {
 			emergency_stop();
 			return false;
 		}
 
 		telemetry_.servo_pulse_us = servo_pulse_us;
-		telemetry_.power_percent = power_percent;
+		telemetry_.wheel_rpm = wheel_rpm;
 		return true;
 	}
 
@@ -99,35 +105,51 @@ class ActuatorOutput {
 			return true;
 		}
 
-		const bool drive_zero = write_motor_power(0);
-		telemetry_.power_percent = 0;
+		const bool m1_zero = bus_.set_motor_speed(spi::Motor::M1, 0);
+		const bool m2_zero = bus_.set_motor_speed(spi::Motor::M2, 0);
+		const bool brake_ok = bus_.brake();
+		const std::uint16_t center_pulse_us = to_servo_pulse_us(0.0f);
+		const bool servo_centered = bus_.set_servo_pulse_us(center_pulse_us);
+		telemetry_.wheel_rpm = 0;
+		if (servo_centered) {
+			telemetry_.servo_pulse_us = center_pulse_us;
+		}
 		telemetry_.armed = false;
-		return drive_zero;
+		return m1_zero && m2_zero && brake_ok && servo_centered;
 	}
 
-	void close() {
+	bool close() {
 		if (initialized_) {
-			emergency_stop();
+			const bool stopped = emergency_stop();
 			bus_.close();
 			initialized_ = false;
+			return stopped;
 		}
+		return true;
+	}
+
+	std::optional<float> get_voltage() {
+		if (!initialized_) {
+			return std::nullopt;
+		}
+		return bus_.read_voltage_v();
 	}
 
 	const ActuatorTelemetry &telemetry() const { return telemetry_; }
 	const ActuatorConfig &config() const { return config_; }
 
   private:
-	std::int16_t to_power_percent(float target_speed_mps) const {
-		const float full_scale_mps =
-			std::max(0.01f, config_.full_scale_speed_mps);
-		const float normalized = std::clamp(std::isfinite(target_speed_mps)
-				? target_speed_mps / full_scale_mps
-				: 0.0f,
-			0.0f, 1.0f);
-		const float limited_percent = normalized *
-			static_cast<float>(
-				std::min<std::uint16_t>(config_.maximum_drive_percent, 100));
-		return static_cast<std::int16_t>(std::lround(limited_percent));
+	std::int16_t to_wheel_rpm(float target_speed_mps) const {
+		const float diameter_m = std::max(0.001f, config_.wheel_diameter_m);
+		const float speed_mps =
+			std::isfinite(target_speed_mps) ? target_speed_mps : 0.0f;
+		const float rpm =
+			speed_mps * 60.0f / (3.14159265358979323846f * diameter_m);
+		const float maximum_rpm = static_cast<float>(
+			std::clamp<std::uint16_t>(config_.maximum_wheel_rpm, 1,
+				std::numeric_limits<std::int16_t>::max()));
+		return static_cast<std::int16_t>(
+			std::lround(std::clamp(rpm, -maximum_rpm, maximum_rpm)));
 	}
 
 	std::uint16_t to_servo_pulse_us(float steering_rad) const {
@@ -152,8 +174,20 @@ class ActuatorOutput {
 			std::lround(std::clamp(pulse_us, 1000.0f, 2100.0f)));
 	}
 
-	bool write_motor_power(std::int16_t percent) {
-		return bus_.set_motor_power(spi::Motor::M1, percent);
+	std::uint16_t limit_servo_pulse_step(std::uint16_t target_pulse_us) const {
+		const std::int32_t current_pulse_us = telemetry_.servo_pulse_us;
+		const std::int32_t maximum_step_us =
+			std::max<std::int32_t>(1, config_.maximum_servo_step_us);
+		const std::int32_t pulse_error_us =
+			static_cast<std::int32_t>(target_pulse_us) - current_pulse_us;
+		return static_cast<std::uint16_t>(current_pulse_us +
+			std::clamp(pulse_error_us, -maximum_step_us, maximum_step_us));
+	}
+
+	bool write_motor_rpm(std::int16_t rpm) {
+		const bool m1_ok = bus_.set_motor_speed(spi::Motor::M1, rpm);
+		const bool m2_ok = bus_.set_motor_speed(spi::Motor::M2, rpm);
+		return m1_ok && m2_ok;
 	}
 
 	ActuatorConfig config_;

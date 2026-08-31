@@ -308,7 +308,7 @@ NavigationCommand NavigationController::update_turning(
 	const float measured_speed_mps =
 		std::isfinite(speed_mps) ? std::abs(speed_mps) : 0.0f;
 	const float reference_speed_mps =
-		std::max(measured_speed_mps, std::min(corner_speed_mps, 0.25f));
+		std::clamp(measured_speed_mps, 0.0f, corner_speed_mps);
 
 	const float remaining_reference_rad =
 		std::max(0.0f, turn_total_angle_rad_ - turn_reference_progress_rad_);

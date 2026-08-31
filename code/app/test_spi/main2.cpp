@@ -1,0 +1,124 @@
+#include <chrono>
+#include <cstdint>
+#include <fcntl.h>
+#include <iomanip>
+#include <iostream>
+#include <linux/spi/spidev.h>
+#include <ostream>
+#include <sys/ioctl.h>
+#include <thread>
+#include <unistd.h>
+
+#define SPI_DEVICE "/dev/spidev0.0"
+
+bool spi_transfer(int fd, const uint8_t *tx, uint8_t *rx, std::size_t len,
+	uint32_t speed, uint8_t bits) {
+
+	spi_ioc_transfer tr{};
+
+	tr.tx_buf = reinterpret_cast<unsigned long>(tx);
+
+	tr.rx_buf = reinterpret_cast<unsigned long>(rx);
+
+	tr.len = static_cast<uint32_t>(len);
+
+	tr.speed_hz = speed;
+
+	tr.bits_per_word = bits;
+
+	return ioctl(fd, SPI_IOC_MESSAGE(1), &tr) >= 0;
+}
+
+void print_rx(const uint8_t *rx, std::size_t len) {
+
+	std::cout << "RX: ";
+
+	for (std::size_t i = 0; i < len; ++i) {
+
+		std::cout << "0x" << std::hex << std::setw(2) << std::setfill('0')
+				  << static_cast<int>(rx[i]) << ' ';
+	}
+
+	std::cout << std::dec << '\n';
+}
+
+void print_tx(const uint8_t *rx, std::size_t len) {
+
+	std::cout << "TX: ";
+
+	for (std::size_t i = 0; i < len; ++i) {
+
+		std::cout << "0x" << std::hex << std::setw(2) << std::setfill('0')
+				  << static_cast<int>(rx[i]) << ' ';
+	}
+
+	std::cout << std::dec << "\t";
+}
+
+int main() {
+
+	const int fd = open(SPI_DEVICE, O_RDWR);
+
+	if (fd < 0) {
+
+		std::cerr << "Cannot open SPI port\n";
+
+		return 1;
+	}
+
+	uint8_t mode = SPI_MODE_0;
+
+	uint8_t bits = 8;
+
+	uint32_t speed = 15'000'000;
+
+	if (ioctl(fd, SPI_IOC_WR_MODE, &mode) < 0 ||
+		ioctl(fd, SPI_IOC_WR_BITS_PER_WORD, &bits) < 0 ||
+		ioctl(fd, SPI_IOC_WR_MAX_SPEED_HZ, &speed) < 0) {
+
+		std::cerr << "Cannot configure SPI\n";
+
+		close(fd);
+
+		return 1;
+	}
+
+	const uint8_t command[]{0xa0, 0x01, 0xF4};
+	const uint8_t dummy[]{0x00, 0x00, 0x00};
+
+	while (true) {
+
+		uint8_t rx_command[3]{};
+
+			if (!spi_transfer(
+					fd, command, rx_command, sizeof(command), speed, bits)) {
+
+				std::cerr << "SPI command transfer failed\n";
+
+				break;
+			}
+
+			print_tx(command, sizeof(command));
+			print_rx(rx_command, sizeof(rx_command));
+			
+			uint8_t rx_data[3]{};
+			
+			if (!spi_transfer(fd, dummy, rx_data, sizeof(dummy), speed, bits)) {
+				
+				std::cerr << "SPI data transfer failed\n";
+				
+				break;
+			}
+			
+			print_tx(dummy, sizeof(dummy));
+			print_rx(rx_data, sizeof(rx_data));
+			std::cout << (rx_data[1] << 8) + rx_data[2] << '\n';
+
+		std::this_thread::sleep_for(std::chrono::seconds(1));
+		std::cout << "====================================" << '\n';
+	}
+
+	close(fd);
+
+	return 0;
+}

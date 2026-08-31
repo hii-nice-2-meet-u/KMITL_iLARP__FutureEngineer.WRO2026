@@ -41,7 +41,7 @@ struct NavigationConfig {
 	// ---------------------------------------------------------
 
 	// Measure wheelbase from rear-axle center to front-axle center.
-	float wheelbase_m{0.18f};
+	float wheelbase_m{0.16375f};
 
 	// WRO outer corners have a 0.10 m wall radius. A vehicle path 0.30 m
 	// inside that wall therefore starts with an approximately 0.40 m radius.
@@ -107,7 +107,7 @@ struct NavigationConfig {
 	// Output shaping removes LiDAR/line-fit jitter and prevents step commands.
 	float steering_filter_time_constant_s{0.035f};
 	float max_steering_rate_rad_s{7.0f};
-	float max_acceleration_mps2{1.8f};
+	float max_acceleration_mps2{5.0f};
 	float max_deceleration_mps2{3.0f};
 
 	// Converts speed error (target - measured) into an acceleration request

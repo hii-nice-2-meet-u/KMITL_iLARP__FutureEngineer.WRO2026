@@ -11,7 +11,7 @@
 namespace logging {
 
 struct OutputSnapshot {
-	std::int16_t motor_power_percent{0};
+	std::int16_t wheel_rpm{0};
 	std::uint16_t servo_pulse_us{1550};
 };
 
@@ -64,7 +64,7 @@ struct TelemetryRow {
 
 	// Values produced by the actuator conversion. They are empty for monitor-
 	// only applications and do not represent an MCU acknowledgement.
-	std::optional<std::int16_t> motor_power_percent;
+	std::optional<std::int16_t> wheel_rpm;
 	std::optional<std::uint16_t> servo_pulse_us;
 };
 

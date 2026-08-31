@@ -27,7 +27,7 @@ const char *telemetry_csv_header() {
 		   "effective_turn_trigger_m,update_dt_s,map_preview_valid,"
 		   "map_approach_active,map_distance_to_corner_m,map_confidence,"
 		   "target_speed_mps,steering_rad,obstacle_count,"
-		   "motor_power_percent,servo_pulse_us";
+		   "wheel_rpm,servo_pulse_us";
 }
 
 const char *corners_csv_header() {
@@ -66,7 +66,7 @@ std::string to_csv_row(const TelemetryRow &row) {
 		   << row.map_distance_to_corner_m << ',' << row.map_confidence << ','
 		   << row.target_speed_mps << ',' << row.steering_rad << ','
 		   << row.obstacle_count << ',';
-	write_optional(stream, row.motor_power_percent);
+	write_optional(stream, row.wheel_rpm);
 	stream << ',';
 	write_optional(stream, row.servo_pulse_us);
 	return stream.str();
@@ -154,7 +154,7 @@ TelemetryRow make_telemetry_row(std::uint64_t timestamp_us,
 	row.obstacle_count = obstacle_count;
 
 	if (output.has_value()) {
-		row.motor_power_percent = output->motor_power_percent;
+		row.wheel_rpm = output->wheel_rpm;
 		row.servo_pulse_us = output->servo_pulse_us;
 	}
 

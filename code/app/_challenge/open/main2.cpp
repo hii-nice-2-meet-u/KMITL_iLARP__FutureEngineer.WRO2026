@@ -1,8 +1,11 @@
 #include <atomic>
+#include <chrono>
 #include <csignal>
 #include <cstdint>
 #include <iostream>
 #include <optional>
+#include <string>
+#include <thread>
 
 #include "open_challenge_actuator.hpp"
 #include "open_challenge_common.hpp"
@@ -21,7 +24,18 @@ void request_stop(int) {
 
 }
 
-int main() {
+int main(int argc, char **argv) {
+	bool direction_only = false;
+	for (int index = 1; index < argc; ++index) {
+		const std::string option(argv[index]);
+		if (option == "--direction-only") {
+			direction_only = true;
+		} else {
+			std::cerr << "Usage: " << argv[0] << " [--direction-only]\n";
+			return 2;
+		}
+	}
+
 	std::signal(SIGINT, request_stop);
 	std::signal(SIGTERM, request_stop);
 
@@ -37,14 +51,18 @@ int main() {
 
 	std::cout
 		<< "Open Challenge main2: LAP 1 LEARN, LAPS 2-3 REPLAY, SPI ACTIVE\n"
-		<< "Drive=M1_POWER only, cap=" << actuator_config.maximum_drive_percent
-		<< "%, servo pulse=" << actuator_config.servo_min_pulse_us << "-"
-		<< actuator_config.servo_max_pulse_us << "us, center="
+		<< "Drive=M1 +RPM, M2 -RPM, wheel diameter="
+		<< actuator_config.wheel_diameter_m
+		<< "m, max=" << actuator_config.maximum_wheel_rpm
+		<< " RPM, servo pulse=" << actuator_config.servo_min_pulse_us << "-"
+		<< actuator_config.servo_max_pulse_us
+		<< "us, max servo step=" << actuator_config.maximum_servo_step_us
+		<< "us, center="
 		<< (actuator_config.servo_min_pulse_us +
 			   actuator_config.servo_max_pulse_us) /
 			2
 		<< "us, wheel steering=+/-" << actuator_config.maximum_wheel_angle_deg
-		<< "deg\n";
+		<< "deg, run=" << (direction_only ? "DIRECTION ONLY" : "FULL") << '\n';
 
 	if (!lidar.initialize() || !lidar.start()) {
 		std::cerr << "LiDAR initialization failed\n";
@@ -59,13 +77,27 @@ int main() {
 
 	otos.setLinearUnit(kSfeOtosLinearUnitMeters);
 	otos.setAngularUnit(kSfeOtosAngularUnitRadians);
-	otos.resetTracking();
-
-	if (!actuators.initialize()) {
-		std::cerr
-			<< "SPI actuator initialization failed; M1 power stop attempted\n";
+	if (!open_challenge::calibrate_otos(otos)) {
 		lidar.stop();
 		return 1;
+	}
+
+	if (!actuators.initialize()) {
+		std::cerr << "SPI actuator initialization failed; M1/M2 stop "
+					 "attempted\n";
+		lidar.stop();
+		return 1;
+	}
+
+	if (const auto voltage = actuators.get_voltage(); voltage.has_value()) {
+		if (voltage <= 11.67f) {
+			std::cerr << "[WARNING] Battery voltage is low :" << *voltage
+					  << "V    NEEDTEAST 11.67 V\n";
+			return 1;
+		}
+		std::cout << "Battery voltage: " << *voltage << " V\n";
+	} else {
+		std::cerr << "Battery voltage read failed\n";
 	}
 
 	const std::string run_directory = logging::make_run_directory();
@@ -114,7 +146,7 @@ int main() {
 			navigation.reset(heading_rad);
 			previous_mode = navigation.state().mode;
 			if (!actuators.arm()) {
-				std::cerr << "Motor arm failed; M1 power stop attempted\n";
+				std::cerr << "Motor arm failed; M1/M2 stop attempted\n";
 				break;
 			}
 			navigation_initialized = true;
@@ -156,6 +188,13 @@ int main() {
 		if (state.direction.has_value()) {
 			track_map.set_direction(*state.direction);
 		}
+		const bool direction_only_complete =
+			direction_only && state.direction.has_value();
+		if (direction_only_complete) {
+			event_log->event(scan.timestamp_us, state.lap, state.corner_index,
+				std::string("direction detected: ") +
+					open_challenge::direction_name(state.direction));
+		}
 
 		if (previous_mode != navigation::NavigationMode::TURNING &&
 			state.mode == navigation::NavigationMode::TURNING) {
@@ -190,7 +229,7 @@ int main() {
 
 		const bool finished =
 			state.mode == navigation::NavigationMode::FINISHED;
-		if (finished) {
+		if (finished || direction_only_complete) {
 			actuators.emergency_stop();
 		} else if (!actuators.apply(result.command)) {
 			std::cerr << "SPI actuator command failed; emergency stop\n";
@@ -198,24 +237,33 @@ int main() {
 		}
 		const auto &telemetry = actuators.telemetry();
 		const logging::OutputSnapshot output{
-			telemetry.power_percent, telemetry.servo_pulse_us};
+			telemetry.wheel_rpm, telemetry.servo_pulse_us};
 		telemetry_log.record(
 			logging::make_telemetry_row(scan.timestamp_us, map_pose, speed_mps,
 				state, result, processed.obstacles.size(), output));
 		wall_log.record(
 			processed.walls, state.mode, map_pose, scan.timestamp_us);
 
+		if (direction_only_complete) {
+			open_challenge::print_command(result, state, heading_rad, speed_mps,
+				telemetry.wheel_rpm, telemetry.servo_pulse_us);
+			std::cout << "Direction detected: "
+					  << open_challenge::direction_name(state.direction)
+					  << "; M1/M2 RPM=0\n";
+			break;
+		}
+
 		if (finished) {
 			open_challenge::print_command(result, state, heading_rad, speed_mps,
-				telemetry.power_percent, telemetry.servo_pulse_us);
-			std::cout << "Open Challenge complete: 3 laps; M1 power=0\n";
+				telemetry.wheel_rpm, telemetry.servo_pulse_us);
+			std::cout << "Open Challenge complete: 3 laps; M1/M2 RPM=0\n";
 			break;
 		}
 
 		if (last_log_timestamp_us == 0 ||
 			scan.timestamp_us - last_log_timestamp_us >= 250000) {
 			open_challenge::print_command(result, state, heading_rad, speed_mps,
-				telemetry.power_percent, telemetry.servo_pulse_us);
+				telemetry.wheel_rpm, telemetry.servo_pulse_us);
 			if (replay_hint.has_value()) {
 				std::cout << "[MAP] next=" << replay_hint->corner_index
 						  << " distance=" << replay_hint->distance_to_entry_m
@@ -231,8 +279,7 @@ int main() {
 		previous_mode = state.mode;
 	}
 
-	actuators.emergency_stop();
-	actuators.close();
+	const bool stopped_safely = actuators.close();
 	lidar.stop();
 	const bool corners_ok = logging::dump_corners(run_directory, track_map);
 	const bool telemetry_ok = telemetry_log.flush();
@@ -247,6 +294,10 @@ int main() {
 				  << telemetry_log.dropped_row_count()
 				  << " walls=" << wall_log.dropped_row_count() << '\n';
 	}
-	std::cout << "Stopped safely; M1 power=0\n";
+	if (!stopped_safely) {
+		std::cerr << "SAFE STOP FAILED; verify M1/M2 and servo manually\n";
+		return 1;
+	}
+	std::cout << "Stopped safely; M1/M2 RPM=0, brake active, servo centered\n";
 	return 0;
 }

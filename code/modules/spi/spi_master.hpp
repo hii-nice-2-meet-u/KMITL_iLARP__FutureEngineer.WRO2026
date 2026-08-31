@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 
@@ -38,6 +39,8 @@ enum class Motor { M1, M2 };
 
 class SPI {
   public:
+	using Frame = std::array<std::uint8_t, 3>;
+
 	SPI() = default;
 	~SPI();
 
@@ -51,6 +54,11 @@ class SPI {
 	void close();
 	bool is_open() const { return fd_ >= 0; }
 
+	// Perform a raw full-duplex SPI transaction without command encoding.
+	// rx may be null when the received bytes are not needed.
+	bool transfer(const std::uint8_t *tx, std::uint8_t *rx, std::size_t length);
+	bool transfer(const Frame &tx, Frame &rx);
+
 	bool echo_test(std::uint16_t value, std::uint16_t &response);
 	bool enable_motors();
 	bool disable_motors();
@@ -59,8 +67,8 @@ class SPI {
 	// 16-bit two's complement in the frame data field.
 	bool set_motor_power(Motor motor, std::int16_t percent);
 
-	// Accepted range is 0-100. Values outside the range are rejected.
-	bool set_motor_speed(Motor motor, std::uint16_t percent);
+	// Signed motor speed in RPM, encoded as signed 16-bit two's complement.
+	bool set_motor_speed(Motor motor, std::int16_t rpm);
 
 	// Positional servo pulse width: 1000-2100 microseconds.
 	bool set_servo_pulse_us(std::uint16_t pulse_us);
@@ -68,12 +76,14 @@ class SPI {
 	// Positional servo command: 0-180 degrees, center = 90 degrees.
 	bool set_servo_angle(std::uint16_t angle_deg);
 
+	bool brake();
+
 	// The controller returns battery voltage as unsigned millivolts.
 	std::optional<float> read_voltage_v();
 
   private:
-	using Frame = std::array<std::uint8_t, 3>;
-	bool transfer(Command command, std::uint16_t data, Frame *rx = nullptr);
+	bool transfer_command(
+		Command command, std::uint16_t data, Frame *rx = nullptr);
 
 	bool request(Command command, std::uint16_t data, Frame &response);
 

@@ -5,6 +5,7 @@
 #include <cstring>
 #include <fcntl.h>
 #include <iostream>
+#include <limits>
 #include <string>
 #include <sys/ioctl.h>
 #include <thread>
@@ -16,7 +17,6 @@ namespace {
 
 constexpr std::int16_t MIN_POWER_PERCENT = -100;
 constexpr std::int16_t MAX_POWER_PERCENT = 100;
-constexpr std::uint8_t MAX_SPEED_PERCENT = 100;
 constexpr std::uint8_t MAX_SERVO_ANGLE_DEG = 180;
 constexpr std::uint16_t MIN_SERVO_PULSE_US = 1000;
 constexpr std::uint16_t MAX_SERVO_PULSE_US = 2100;
@@ -70,9 +70,9 @@ bool SPI::echo_test(std::uint16_t value, std::uint16_t &response) {
 	return true;
 }
 
-bool SPI::enable_motors() { return transfer(Command::M_ENABLE, 0); }
+bool SPI::enable_motors() { return transfer_command(Command::M_ENABLE, 0); }
 
-bool SPI::disable_motors() { return transfer(Command::M_DISABLE, 0); }
+bool SPI::disable_motors() { return transfer_command(Command::M_DISABLE, 0); }
 
 bool SPI::set_motor_power(Motor motor, std::int16_t percent) {
 	if (percent < MIN_POWER_PERCENT || percent > MAX_POWER_PERCENT) {
@@ -81,17 +81,13 @@ bool SPI::set_motor_power(Motor motor, std::int16_t percent) {
 	}
 	const Command command =
 		motor == Motor::M1 ? Command::M1_POW : Command::M2_POW;
-	return transfer(command, static_cast<std::uint16_t>(percent));
+	return transfer_command(command, static_cast<std::uint16_t>(percent));
 }
 
-bool SPI::set_motor_speed(Motor motor, std::uint16_t percent) {
-	if (percent > MAX_SPEED_PERCENT) {
-		std::cerr << "Motor speed must be in range 0-100\n";
-		return false;
-	}
+bool SPI::set_motor_speed(Motor motor, std::int16_t rpm) {
 	const Command command =
 		motor == Motor::M1 ? Command::M1_SPD : Command::M2_SPD;
-	return transfer(command, percent);
+	return transfer_command(command, static_cast<std::uint16_t>(rpm));
 }
 
 bool SPI::set_servo_pulse_us(std::uint16_t pulse_us) {
@@ -99,7 +95,7 @@ bool SPI::set_servo_pulse_us(std::uint16_t pulse_us) {
 		std::cerr << "Servo pulse must be in range 1000-2100 us\n";
 		return false;
 	}
-	return transfer(Command::SERVO_PULSE, pulse_us);
+	return transfer_command(Command::SERVO_PULSE, pulse_us);
 }
 
 bool SPI::set_servo_angle(std::uint16_t angle_deg) {
@@ -107,8 +103,10 @@ bool SPI::set_servo_angle(std::uint16_t angle_deg) {
 		std::cerr << "Servo angle must be in range 0-180 degrees\n";
 		return false;
 	}
-	return transfer(Command::SERVO_ANGLE, angle_deg);
+	return transfer_command(Command::SERVO_ANGLE, angle_deg);
 }
+
+bool SPI::brake() { return transfer_command(Command::M_Brake, 0x0000); }
 
 std::optional<float> SPI::read_voltage_v() {
 	Frame frame{};
@@ -118,22 +116,23 @@ std::optional<float> SPI::read_voltage_v() {
 	return static_cast<float>(decode_data(frame)) / 1000.0f;
 }
 
-bool SPI::transfer(Command command, std::uint16_t data, Frame *rx) {
+bool SPI::transfer(
+	const std::uint8_t *tx, std::uint8_t *rx, std::size_t length) {
 	if (!is_open()) {
 		std::cerr << "SPI transfer requested while bus is closed\n";
 		return false;
 	}
-
-	const Frame tx{static_cast<std::uint8_t>(command),
-		static_cast<std::uint8_t>((data >> 8) & 0xFF),
-		static_cast<std::uint8_t>(data & 0xFF)};
-	Frame ignored_rx{};
-	Frame &receive = rx != nullptr ? *rx : ignored_rx;
+	if (tx == nullptr || length == 0 ||
+		length > std::numeric_limits<std::uint32_t>::max()) {
+		std::cerr << "SPI raw transfer has invalid buffer or length\n";
+		return false;
+	}
 
 	spi_ioc_transfer transaction{};
-	transaction.tx_buf = reinterpret_cast<std::uintptr_t>(tx.data());
-	transaction.rx_buf = reinterpret_cast<std::uintptr_t>(receive.data());
-	transaction.len = static_cast<std::uint32_t>(tx.size());
+	transaction.tx_buf = reinterpret_cast<std::uintptr_t>(tx);
+	transaction.rx_buf =
+		rx != nullptr ? reinterpret_cast<std::uintptr_t>(rx) : 0;
+	transaction.len = static_cast<std::uint32_t>(length);
 	transaction.speed_hz = speed_hz_;
 	transaction.bits_per_word = bits_;
 
@@ -144,15 +143,30 @@ bool SPI::transfer(Command command, std::uint16_t data, Frame *rx) {
 	return true;
 }
 
+bool SPI::transfer(const Frame &tx, Frame &rx) {
+	return transfer(tx.data(), rx.data(), tx.size());
+}
+
+bool SPI::transfer_command(Command command, std::uint16_t data, Frame *rx) {
+
+	const Frame tx{static_cast<std::uint8_t>(command),
+		static_cast<std::uint8_t>((data >> 8) & 0xFF),
+		static_cast<std::uint8_t>(data & 0xFF)};
+	Frame ignored_rx{};
+	Frame &receive = rx != nullptr ? *rx : ignored_rx;
+
+	return transfer(tx, receive);
+}
+
 bool SPI::request(Command command, std::uint16_t data, Frame &response) {
-	if (!transfer(command, data)) {
+	if (!transfer_command(command, data)) {
 		return false;
 	}
 
 	// The slave prepares a response after receiving a command. Clock it out in
 	// a second frame using NULL_ without changing controller state.
 	std::this_thread::sleep_for(RESPONSE_DELAY);
-	return transfer(Command::NULL_, 0, &response);
+	return transfer_command(Command::NULL_, 0, &response);
 }
 
 std::uint16_t SPI::decode_data(const Frame &frame) {

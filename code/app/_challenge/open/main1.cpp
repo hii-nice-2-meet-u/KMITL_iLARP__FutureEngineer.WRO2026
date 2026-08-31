@@ -33,10 +33,13 @@ int main() {
 	open_challenge::ActuatorOutput actuators(actuator_config);
 
 	std::cout << "Open Challenge main1: LIVE navigation, NO MAP, SPI ACTIVE\n"
-			  << "Drive=M1_POWER only, cap="
-			  << actuator_config.maximum_drive_percent
-			  << "%, servo pulse=" << actuator_config.servo_min_pulse_us << "-"
-			  << actuator_config.servo_max_pulse_us << "us, center="
+			  << "Drive=M1 +RPM, M2 -RPM, wheel diameter="
+			  << actuator_config.wheel_diameter_m
+			  << "m, max=" << actuator_config.maximum_wheel_rpm
+			  << " RPM, servo pulse=" << actuator_config.servo_min_pulse_us
+			  << "-" << actuator_config.servo_max_pulse_us
+			  << "us, max servo step=" << actuator_config.maximum_servo_step_us
+			  << "us, center="
 			  << (actuator_config.servo_min_pulse_us +
 					 actuator_config.servo_max_pulse_us) /
 			2 << "us, wheel steering=+/-"
@@ -55,11 +58,14 @@ int main() {
 
 	otos.setLinearUnit(kSfeOtosLinearUnitMeters);
 	otos.setAngularUnit(kSfeOtosAngularUnitRadians);
-	otos.resetTracking();
+	if (!open_challenge::calibrate_otos(otos)) {
+		lidar.stop();
+		return 1;
+	}
 
 	if (!actuators.initialize()) {
-		std::cerr
-			<< "SPI actuator initialization failed; M1 power stop attempted\n";
+		std::cerr << "SPI actuator initialization failed; M1/M2 stop "
+					 "attempted\n";
 		lidar.stop();
 		return 1;
 	}
@@ -110,7 +116,7 @@ int main() {
 			navigation.reset(heading_rad);
 			previous_mode = navigation.state().mode;
 			if (!actuators.arm()) {
-				std::cerr << "Motor arm failed; M1 power stop attempted\n";
+				std::cerr << "Motor arm failed; M1/M2 stop attempted\n";
 				break;
 			}
 			navigation_initialized = true;
@@ -157,7 +163,7 @@ int main() {
 		}
 		const auto &telemetry = actuators.telemetry();
 		const logging::OutputSnapshot output{
-			telemetry.power_percent, telemetry.servo_pulse_us};
+			telemetry.wheel_rpm, telemetry.servo_pulse_us};
 		telemetry_log.record(
 			logging::make_telemetry_row(scan.timestamp_us, map_pose, speed_mps,
 				state, result, processed.obstacles.size(), output));
@@ -166,21 +172,20 @@ int main() {
 
 		if (finished) {
 			open_challenge::print_command(result, state, heading_rad, speed_mps,
-				telemetry.power_percent, telemetry.servo_pulse_us);
-			std::cout << "Open Challenge complete: 12 turns; M1 power=0\n";
+				telemetry.wheel_rpm, telemetry.servo_pulse_us);
+			std::cout << "Open Challenge complete: 12 turns; M1/M2 RPM=0\n";
 			break;
 		}
 
 		if (last_log_timestamp_us == 0 ||
 			scan.timestamp_us - last_log_timestamp_us >= 250000) {
 			open_challenge::print_command(result, state, heading_rad, speed_mps,
-				telemetry.power_percent, telemetry.servo_pulse_us);
+				telemetry.wheel_rpm, telemetry.servo_pulse_us);
 			last_log_timestamp_us = scan.timestamp_us;
 		}
 	}
 
-	actuators.emergency_stop();
-	actuators.close();
+	const bool stopped_safely = actuators.close();
 	lidar.stop();
 	const bool telemetry_ok = telemetry_log.flush();
 	const bool walls_ok = wall_log.flush();
@@ -194,6 +199,10 @@ int main() {
 				  << telemetry_log.dropped_row_count()
 				  << " walls=" << wall_log.dropped_row_count() << '\n';
 	}
-	std::cout << "Stopped safely; M1 power=0\n";
+	if (!stopped_safely) {
+		std::cerr << "SAFE STOP FAILED; verify M1/M2 and servo manually\n";
+		return 1;
+	}
+	std::cout << "Stopped safely; M1/M2 RPM=0, brake active, servo centered\n";
 	return 0;
 }
