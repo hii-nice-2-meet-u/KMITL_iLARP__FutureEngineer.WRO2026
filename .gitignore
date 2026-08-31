@@ -9,3 +9,4 @@
 .clang-format
 /compile_commands.json
 logs/
+code/build_n_deploy.sh
