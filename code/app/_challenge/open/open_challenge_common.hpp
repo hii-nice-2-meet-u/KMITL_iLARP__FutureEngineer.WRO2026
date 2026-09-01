@@ -81,7 +81,12 @@ inline navigation::NavigationConfig make_navigation_config() {
 	config.use_wall_corner_trigger = true;
 	config.front_wall_fallback_distance_m = 0.56f;
 	config.wall_corner_to_path_offset_m = 0.02f;
-	config.corner_radius_m = 0.12f;
+	// Must stay above the vehicle's minimum turning radius. With
+	// wheelbase_m = 0.16375 that is 0.210 m at the 38 deg steering clamp and
+	// 0.164 m at the 45 deg actuator limit. This value also sets the corner
+	// feed-forward magnitude atan2(wheelbase_m, radius) and the geometric turn
+	// trigger distance, so it cannot be tuned for cornering line alone.
+	config.corner_radius_m = 0.45f;
 
 	// ======
 	// Steering transition and rate limit
