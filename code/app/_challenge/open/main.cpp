@@ -383,10 +383,17 @@ int main(int argc, char **argv) {
 			battery.sample_age_us = scan.timestamp_us - last_battery_sample_us;
 			battery.valid = true;
 		}
-		telemetry_log.record(
+		logging::TelemetryRow telemetry_row =
 			logging::make_telemetry_row(scan.timestamp_us, map_pose, speed_mps,
 				state, result, processed.obstacles.size(), output, odometry,
-				battery, stage_timing));
+				battery, stage_timing);
+		telemetry_row.lidar_points_total =
+			static_cast<int>(processed.reject_stats.total);
+		telemetry_row.lidar_points_rejected_quality =
+			static_cast<int>(processed.reject_stats.rejected_quality);
+		telemetry_row.lidar_points_rejected_range =
+			static_cast<int>(processed.reject_stats.rejected_range);
+		telemetry_log.record(telemetry_row);
 		wall_log.record(
 			processed.walls, state.mode, map_pose, scan.timestamp_us);
 		segment_log.record(processed, state.mode);

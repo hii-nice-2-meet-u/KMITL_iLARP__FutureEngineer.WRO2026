@@ -428,6 +428,12 @@ int main(int, char **argv) {
 			static_cast<int>(fused.diagnostics.frame_confirmed_count);
 		telemetry_row.camera_time_synchronized =
 			fused.diagnostics.camera_time_synchronized;
+		telemetry_row.lidar_points_total =
+			static_cast<int>(processed_lidar.reject_stats.total);
+		telemetry_row.lidar_points_rejected_quality =
+			static_cast<int>(processed_lidar.reject_stats.rejected_quality);
+		telemetry_row.lidar_points_rejected_range =
+			static_cast<int>(processed_lidar.reject_stats.rejected_range);
 		telemetry_log.record(telemetry_row);
 		wall_log.record(
 			processed_lidar.walls, state.mode, pose, scan.timestamp_us);

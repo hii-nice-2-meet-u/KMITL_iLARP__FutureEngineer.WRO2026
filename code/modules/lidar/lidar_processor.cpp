@@ -24,9 +24,16 @@ ProcessedLidarData LidarProcessor::process(
 	points.reserve(data.points.size());
 
 	// Raw LiDAR -> Cartesian
+	result.reject_stats.total = data.points.size();
 	for (const auto &point : data.points) {
 
-		if (!is_valid_point(point)) {
+		const PointRejectReason reason = classify_point(point);
+		if (reason != PointRejectReason::ACCEPT) {
+			if (reason == PointRejectReason::QUALITY) {
+				++result.reject_stats.rejected_quality;
+			} else {
+				++result.reject_stats.rejected_range;
+			}
 			continue;
 		}
 
@@ -113,23 +120,28 @@ ProcessedLidarData LidarProcessor::process(
 	return result;
 }
 
-bool LidarProcessor::is_valid_point(const LidarPoint &point) const {
-	if (point.quality < 10) return false;
+LidarProcessor::PointRejectReason LidarProcessor::classify_point(
+	const LidarPoint &point) const {
+	if (point.quality < 10) return PointRejectReason::QUALITY;
 	if (!std::isfinite(point.distance_m) ||
 		!std::isfinite(point.angle_deg) || point.distance_m < 0.015f) {
-		return false;
+		return PointRejectReason::RANGE;
 	}
 
 	// Long returns are valid sensor readings, but are not useful for the small
 	// WRO geometry and make accidental line fits much more likely.
-	if (point.distance_m > 3.0f) return false;
+	if (point.distance_m > 3.0f) return PointRejectReason::RANGE;
 
 	// const bool front_region =
 	// 	point.angle_deg >= 75.0f && point.angle_deg <= 285.0f;
 
 	// if (!front_region && point.distance_m > 0.70f) return false;
 
-	return true;
+	return PointRejectReason::ACCEPT;
+}
+
+bool LidarProcessor::is_valid_point(const LidarPoint &point) const {
+	return classify_point(point) == PointRejectReason::ACCEPT;
 }
 
 CartesianPoint LidarProcessor::polar2cartesian(const LidarPoint &point) const {

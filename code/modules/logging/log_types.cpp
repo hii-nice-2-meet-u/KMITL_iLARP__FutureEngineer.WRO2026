@@ -49,6 +49,8 @@ const char *telemetry_csv_header() {
 		   "obstacle_world_x_m,obstacle_world_y_m,"
 		   "lidar_valid_count,camera_valid_count,matched_count,"
 		   "frame_confirmed_count,camera_time_synchronized,"
+		   "lidar_points_total,lidar_points_rejected_quality,"
+		   "lidar_points_rejected_range,"
 		   "target_speed_mps,steering_rad,obstacle_count,"
 		   "wheel_rpm,servo_pulse_us,commanded_servo_pulse_us";
 }
@@ -132,6 +134,9 @@ std::string to_csv_row(const TelemetryRow &row) {
 		   << ',' << row.lidar_valid_count << ',' << row.camera_valid_count
 		   << ',' << row.matched_count << ',' << row.frame_confirmed_count
 		   << ',' << (row.camera_time_synchronized ? 1 : 0) << ','
+		   << row.lidar_points_total << ','
+		   << row.lidar_points_rejected_quality << ','
+		   << row.lidar_points_rejected_range << ','
 		   << row.target_speed_mps << ',' << row.steering_rad << ','
 		   << row.obstacle_count << ',';
 	write_optional(stream, row.wheel_rpm);

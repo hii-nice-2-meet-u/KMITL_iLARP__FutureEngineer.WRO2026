@@ -79,6 +79,17 @@ struct ProcessedLidarData {
 	std::optional<LineSegment> parking_wall;
 
 	std::vector<ObstacleObject> obstacles;
+
+	// Per-scan point-rejection tally. total counts every raw return; the two
+	// rejected_* buckets show why points were dropped by is_valid_point, so a
+	// badly-set quality or range threshold is visible without persisting the
+	// raw scan. accepted = total - rejected_quality - rejected_range.
+	struct ScanRejectStats {
+		std::size_t total{0};
+		std::size_t rejected_quality{0};
+		std::size_t rejected_range{0};
+	};
+	ScanRejectStats reject_stats;
 };
 
 class LidarProcessor {
@@ -93,6 +104,12 @@ class LidarProcessor {
 		cv::Mat &img, const LineSegment &segment, float scale_px_per_m) const;
 
   private:
+	// Single source of truth for the point-validity gate. is_valid_point()
+	// delegates to it so the accept/reject decision and the rejection-reason
+	// tally can never diverge.
+	enum class PointRejectReason { ACCEPT, QUALITY, RANGE };
+	PointRejectReason classify_point(const LidarPoint &point) const;
+
 	bool is_valid_point(const LidarPoint &point) const;
 
 	CartesianPoint polar2cartesian(const LidarPoint &lidar_point) const;

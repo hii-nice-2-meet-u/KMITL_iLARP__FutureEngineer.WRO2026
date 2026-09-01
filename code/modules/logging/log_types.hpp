@@ -205,6 +205,12 @@ struct TelemetryRow {
 	int frame_confirmed_count{0};
 	bool camera_time_synchronized{false};
 
+	// Per-scan LiDAR point-rejection tally from ProcessedLidarData. Makes a
+	// mis-set quality/range threshold visible without persisting the raw scan.
+	int lidar_points_total{0};
+	int lidar_points_rejected_quality{0};
+	int lidar_points_rejected_range{0};
+
 	// Final navigation command and detected LiDAR-object count.
 	float target_speed_mps{0.0f};
 	float steering_rad{0.0f};
