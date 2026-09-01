@@ -44,21 +44,12 @@ given; do not re-open them.
 
 | # | Decision | Consequence for the tasks |
 |---|---|---|
-| D1 | `wheelbase_m = 0.16375 m` is confirmed correct. | See the **still-open** note below — the question about the *physical steering angle* was not answered, but with D2's value it no longer blocks anything. |
+| D1 | `wheelbase_m = 0.16375 m` confirmed, and `maximum_steering_command_deg = 45` confirmed as the real physical steering limit. | Nothing further needed. The 38° clamp sits inside the 45° rack limit, and the 20° feed-forward inside both. |
 | D2 | **`corner_radius_m = 0.45`** | T-03. Feed-forward becomes 20.0°, well inside the 38° clamp with 18° of headroom. See §3. |
 | D3 | **`confirmation_frames = 1` is deliberate** — detection arrives late and often lasts only a single frame. | T-14 keeps it at 1 and records the reason. Because temporal filtering is unavailable, a *spatial* gate replaces it — see T-14. |
 | D4 | Field is a small square inside a large square. Traffic pillars sit on the lines **400 mm or 600 mm** from the inner square's edge (corridor is ~1 m wide). | T-11 gates avoidance to `NORMAL` + `SEARCH_DIRECTION`; `TURNING` keeps sole authority over steering. See §3.1 for the handover rule. |
 | D5 | **Delete the Pi-side `speed_pid`.** The STM32 already ramps with its own PID. | T-16 becomes a deletion, plus a documentation correction. |
 | D6 | Left to judgement. **Chosen: a confirmed wall-corner trigger bypasses the replay gate.** | T-15. Rationale in §3.2. |
-
-> **Still open, not blocking:** D1 asked whether the steering rack physically
-> reaches 45°; the answer given was the wheelbase instead. This no longer gates
-> any task, but it is still worth measuring, because
-> `ActuatorConfig::maximum_steering_command_deg = 45` is what maps a steering
-> angle onto the servo pulse range. If the linkage actually binds at, say, 35°,
-> then **every** steering command in every mode is scaled wrong — a 20°
-> feed-forward would produce noticeably less than 20° at the wheel. Add this to
-> `docs/audit/HARDWARE_CHECKS.md` alongside the F-07/F-08 tests (§4).
 
 ---
 
