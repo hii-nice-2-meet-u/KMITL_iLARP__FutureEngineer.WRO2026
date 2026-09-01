@@ -2,6 +2,10 @@
 set -euo pipefail
 
 CROSS_IMAGE="cross-pi"
+PI_USER="hii"
+PI_IP="192.168.11.176"
+# PI_IP="ilarp.local"
+PI_TARGET_DIR="/home/hii/wro_iLarp"
 
 SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 

@@ -92,7 +92,7 @@ inline navigation::NavigationConfig make_navigation_config() {
 	// ======
 	// Turn completion
 	config.heading_tolerance_rad = 16.50f * PI / 180.0f;
-	config.exit_acceleration_blend_rad = 20.0f;
+	config.exit_acceleration_blend_rad = 20.0f * PI / 180.0f;
 	config.heading_confirm_frames = 2;
 
 	// ======
