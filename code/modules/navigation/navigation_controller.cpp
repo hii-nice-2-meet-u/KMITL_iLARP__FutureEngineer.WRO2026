@@ -21,6 +21,11 @@ NavigationResult NavigationController::update(
 	NavigationResult result;
 	const float dt_s = calculate_dt_s(lidar_data.timestamp_us);
 
+	// Fill the wall measurement group first so every mode logs real geometry.
+	// update_normal() overwrites these with its own control values, so NORMAL
+	// rows keep reporting exactly what Stanley consumed.
+	populate_wall_observation(lidar_data, result.debug);
+
 	switch (state_.mode) {
 
 	case NavigationMode::SEARCH_DIRECTION:
@@ -300,6 +305,10 @@ NavigationCommand NavigationController::update_normal(
 
 	debug.angle_error_rad = heading_error_rad;
 
+	// From here on distance_error_m / angle_error_rad hold live Stanley inputs
+	// rather than the reporting-only observation filled in by update().
+	debug.wall_following_active = true;
+
 	// ---------------------------------------------------------
 	// Stanley steering
 	// ---------------------------------------------------------
@@ -538,6 +547,31 @@ NavigationController::TrackWalls NavigationController::resolve_track_walls(
 	}
 
 	return result;
+}
+
+// WALL OBSERVATION (reporting only)
+
+void NavigationController::populate_wall_observation(
+	const lidar::ProcessedLidarData &lidar_data, NavigationDebug &debug) const {
+
+	debug.front_wall_valid = lidar_data.walls.front.has_value();
+
+	// Inner/outer only exist once the driving direction is known. Before that
+	// the flags stay false and the distances stay zero, which the flags make
+	// unambiguous.
+	const TrackWalls track_walls = resolve_track_walls(lidar_data.walls);
+
+	debug.outer_wall_valid = track_walls.outer != nullptr;
+	debug.inner_wall_valid = track_walls.inner != nullptr;
+
+	if (track_walls.outer != nullptr) {
+		debug.outer_distance_m = track_walls.outer->perpendicular_distance();
+		debug.wall_angle_rad = calculate_wall_heading_error(*track_walls.outer);
+	}
+
+	if (track_walls.inner != nullptr) {
+		debug.inner_distance_m = track_walls.inner->perpendicular_distance();
+	}
 }
 
 // CROSS-TRACK ERROR
@@ -828,6 +862,11 @@ bool NavigationController::should_start_turn(
 	const lidar::ProcessedLidarData &lidar_data, float speed_mps,
 	const std::optional<MapPose> &map_pose,
 	const std::optional<ReplayHint> &replay_hint, NavigationDebug &debug) {
+
+	// Marks effective_turn_trigger_m and the wall_corner_* group as evaluated
+	// on this tick. Without it a zero in those columns is indistinguishable
+	// from a tick that never ran the trigger at all (every TURNING tick).
+	debug.turn_trigger_evaluated = true;
 
 	if (!state_.direction.has_value()) {
 		turn_trigger_frames_ = 0;

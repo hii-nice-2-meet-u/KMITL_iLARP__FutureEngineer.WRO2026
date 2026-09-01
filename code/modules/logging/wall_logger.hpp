@@ -28,8 +28,8 @@ class WallLogger {
 
   private:
 	void queue_wall(const std::optional<lidar::LineSegment> &segment,
-		const char *role, const navigation::MapPose &pose,
-		std::uint64_t timestamp_us);
+		const char *role, const char *mode_name,
+		const navigation::MapPose &pose, std::uint64_t timestamp_us);
 
 	std::unique_ptr<AsyncCsvWriter> writer_;
 };

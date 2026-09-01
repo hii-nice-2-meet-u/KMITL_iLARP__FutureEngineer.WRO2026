@@ -156,6 +156,15 @@ int main(int argc, char **argv) {
 			break;
 		}
 
+		// Same steady_clock epoch as TimedLidarData::timestamp_us, so the
+		// logged scan-to-pose skew is a measurement, not an assumption.
+		const std::uint64_t pose_timestamp_us = static_cast<std::uint64_t>(
+			std::chrono::duration_cast<std::chrono::microseconds>(
+				std::chrono::steady_clock::now().time_since_epoch())
+				.count());
+		const logging::OdometrySample odometry{pose_timestamp_us, velocity.x,
+			velocity.y, velocity.h, acceleration.x, acceleration.y};
+
 		const float heading_rad = position.h;
 		const float speed_mps = std::hypot(velocity.x, velocity.y);
 		if (!std::isfinite(heading_rad) || !std::isfinite(speed_mps)) {
@@ -332,7 +341,7 @@ int main(int argc, char **argv) {
 			telemetry.wheel_rpm, telemetry.servo_pulse_us};
 		telemetry_log.record(
 			logging::make_telemetry_row(scan.timestamp_us, map_pose, speed_mps,
-				state, result, processed.obstacles.size(), output));
+				state, result, processed.obstacles.size(), output, odometry));
 		wall_log.record(
 			processed.walls, state.mode, map_pose, scan.timestamp_us);
 

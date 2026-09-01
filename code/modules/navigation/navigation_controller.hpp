@@ -216,6 +216,14 @@ class NavigationController {
 
 	TrackWalls resolve_track_walls(const lidar::ResolvedWalls &walls) const;
 
+	// Reporting only. Fills the wall measurement group before the mode switch
+	// so a non-NORMAL tick logs what the LiDAR actually saw instead of a
+	// default-constructed zero. update_normal() overwrites these with the
+	// values it feeds to Stanley, so NORMAL rows are unchanged. Nothing in the
+	// control path reads what this writes.
+	void populate_wall_observation(
+		const lidar::ProcessedLidarData &lidar_data, NavigationDebug &debug) const;
+
 	float calculate_cross_track_error(
 		const lidar::LineSegment &outer_wall) const;
 	float calculate_center_cross_track_error(

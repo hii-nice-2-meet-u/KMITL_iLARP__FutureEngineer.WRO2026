@@ -82,10 +82,25 @@ struct NavigationDebug {
 	// a stalled iteration is indistinguishable from a healthy one there.
 	float raw_update_dt_s{0.0f};
 
+	// Measurement flags. These describe what the LiDAR resolved this tick and
+	// are populated in EVERY mode, so a zero distance means "measured zero",
+	// never "this mode does not compute it". Gate every distance column on the
+	// matching flag before plotting it.
 	bool outer_wall_valid{false};
 	bool inner_wall_valid{false};
 	bool corridor_center_active{false};
 	bool front_wall_valid{false};
+
+	// Control-state flags. Unlike the measurement flags above, these say which
+	// computation actually ran, so a reader can tell a real controller input
+	// from a value that was never calculated on this tick.
+	//
+	// wall_following_active : distance_error_m / angle_error_rad hold live
+	//                         Stanley inputs (NORMAL, outer wall resolved).
+	// turn_trigger_evaluated: effective_turn_trigger_m and the wall_corner_*
+	//                         group were evaluated (should_start_turn ran).
+	bool wall_following_active{false};
+	bool turn_trigger_evaluated{false};
 	bool heading_hold_active{false};
 	bool map_preview_valid{false};
 	bool map_approach_active{false};

@@ -13,17 +13,22 @@ WallLogger::WallLogger(const std::string &run_directory)
 void WallLogger::record(const lidar::ResolvedWalls &walls,
 	navigation::NavigationMode mode, const navigation::MapPose &pose,
 	std::uint64_t timestamp_us) {
-	if (!writer_ || mode != navigation::NavigationMode::NORMAL) {
+	if (!writer_) {
 		return;
 	}
 
-	queue_wall(walls.left, "LEFT", pose, timestamp_us);
-	queue_wall(walls.right, "RIGHT", pose, timestamp_us);
-	queue_wall(walls.front, "FRONT", pose, timestamp_us);
+	// Recorded in every mode. Gating this on NORMAL left walls.csv with no
+	// geometry at all through corners and direction search, which is exactly
+	// where a mis-resolved wall matters most. The mode column lets the reader
+	// filter instead.
+	const char *mode_name = navigation_mode_name(mode);
+	queue_wall(walls.left, "LEFT", mode_name, pose, timestamp_us);
+	queue_wall(walls.right, "RIGHT", mode_name, pose, timestamp_us);
+	queue_wall(walls.front, "FRONT", mode_name, pose, timestamp_us);
 }
 
 void WallLogger::queue_wall(const std::optional<lidar::LineSegment> &segment,
-	const char *role, const navigation::MapPose &pose,
+	const char *role, const char *mode_name, const navigation::MapPose &pose,
 	std::uint64_t timestamp_us) {
 	if (!segment.has_value()) {
 		return;
@@ -32,6 +37,7 @@ void WallLogger::queue_wall(const std::optional<lidar::LineSegment> &segment,
 	WallRow row;
 	row.timestamp_us = timestamp_us;
 	row.wall_role = role;
+	row.mode = mode_name;
 	row.pos_x_m = pose.x_m;
 	row.pos_y_m = pose.y_m;
 	row.heading_rad = pose.heading_rad;

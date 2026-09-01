@@ -19,9 +19,12 @@ void write_optional(
 const char *telemetry_csv_header() {
 	return "row_index,timestamp_us,lap,corner_index,mode,"
 		   "pos_x_m,pos_y_m,heading_rad,measured_speed_mps,"
+		   "pose_timestamp_us,otos_velocity_x_mps,otos_velocity_y_mps,"
+		   "otos_yaw_rate_rps,otos_accel_x_mps2,otos_accel_y_mps2,"
 		   "outer_distance_m,inner_distance_m,distance_error_m,wall_angle_rad,"
 		   "angle_error_rad,outer_wall_valid,inner_wall_valid,"
-		   "corridor_center_active,front_wall_valid,heading_hold_active,"
+		   "corridor_center_active,wall_following_active,front_wall_valid,"
+		   "heading_hold_active,"
 		   "heading_tracking_error_rad,lost_wall_time_s,heading_error_rad,"
 		   "turn_progress,turn_feedforward_rad,raw_steering_rad,"
 		   "raw_target_speed_mps,corner_speed_mps,replay_speed_factor,"
@@ -31,7 +34,7 @@ const char *telemetry_csv_header() {
 		   "wall_corner_lateral_m,wall_corner_stability_error_m,"
 		   "wall_corner_confirm_frames,wall_corner_candidate_valid,"
 		   "wall_corner_confirmed,wall_corner_trigger_active,"
-		   "front_wall_fallback_active,"
+		   "front_wall_fallback_active,turn_trigger_evaluated,"
 		   "stanley_cross_track_term_rad,stanley_heading_term_rad,"
 		   "stanley_heading_integral,turn_heading_pid_output_rad,"
 		   "turn_heading_pid_integral,turn_trigger_source,"
@@ -56,7 +59,7 @@ const char *corners_csv_header() {
 }
 
 const char *walls_csv_header() {
-	return "timestamp_us,wall_role,pos_x_m,pos_y_m,heading_rad,"
+	return "timestamp_us,wall_role,mode,pos_x_m,pos_y_m,heading_rad,"
 		   "segment_start_x_m,segment_start_y_m,segment_end_x_m,"
 		   "segment_end_y_m,wall_angle_rad";
 }
@@ -69,12 +72,16 @@ std::string to_csv_row(const TelemetryRow &row) {
 		   << ',' << row.corner_index
 		   << ',' << row.mode << ',' << row.pos_x_m << ',' << row.pos_y_m << ','
 		   << row.heading_rad << ',' << row.measured_speed_mps << ','
+		   << row.pose_timestamp_us << ',' << row.otos_velocity_x_mps << ','
+		   << row.otos_velocity_y_mps << ',' << row.otos_yaw_rate_rps << ','
+		   << row.otos_accel_x_mps2 << ',' << row.otos_accel_y_mps2 << ','
 		   << row.outer_distance_m << ',' << row.inner_distance_m << ','
 		   << row.distance_error_m << ','
 		   << row.wall_angle_rad << ',' << row.angle_error_rad << ','
 		   << (row.outer_wall_valid ? 1 : 0) << ','
 		   << (row.inner_wall_valid ? 1 : 0) << ','
 		   << (row.corridor_center_active ? 1 : 0) << ','
+		   << (row.wall_following_active ? 1 : 0) << ','
 		   << (row.front_wall_valid ? 1 : 0) << ','
 		   << (row.heading_hold_active ? 1 : 0) << ','
 		   << row.heading_tracking_error_rad << ',' << row.lost_wall_time_s
@@ -92,6 +99,7 @@ std::string to_csv_row(const TelemetryRow &row) {
 		   << (row.wall_corner_confirmed ? 1 : 0) << ','
 		   << (row.wall_corner_trigger_active ? 1 : 0) << ','
 		   << (row.front_wall_fallback_active ? 1 : 0) << ','
+		   << (row.turn_trigger_evaluated ? 1 : 0) << ','
 		   << row.stanley_cross_track_term_rad << ','
 		   << row.stanley_heading_term_rad << ','
 		   << row.stanley_heading_integral << ','
@@ -140,7 +148,8 @@ std::string to_csv_row(const WallRow &row) {
 	std::ostringstream stream;
 	stream.setf(std::ios::fixed);
 	stream.precision(6);
-	stream << row.timestamp_us << ',' << row.wall_role << ',' << row.pos_x_m
+	stream << row.timestamp_us << ',' << row.wall_role << ',' << row.mode << ','
+		   << row.pos_x_m
 		   << ',' << row.pos_y_m << ',' << row.heading_rad << ','
 		   << row.segment_start_x_m << ',' << row.segment_start_y_m << ','
 		   << row.segment_end_x_m << ',' << row.segment_end_y_m << ','
@@ -166,7 +175,8 @@ TelemetryRow make_telemetry_row(std::uint64_t timestamp_us,
 	const navigation::MapPose &pose, float measured_speed_mps,
 	const navigation::NavigationState &state,
 	const navigation::NavigationResult &result, std::size_t obstacle_count,
-	const std::optional<OutputSnapshot> &output) {
+	const std::optional<OutputSnapshot> &output,
+	const std::optional<OdometrySample> &odometry) {
 	TelemetryRow row;
 	row.timestamp_us = timestamp_us;
 	row.lap = state.lap;
@@ -184,6 +194,7 @@ TelemetryRow make_telemetry_row(std::uint64_t timestamp_us,
 	row.outer_wall_valid = result.debug.outer_wall_valid;
 	row.inner_wall_valid = result.debug.inner_wall_valid;
 	row.corridor_center_active = result.debug.corridor_center_active;
+	row.wall_following_active = result.debug.wall_following_active;
 	row.front_wall_valid = result.debug.front_wall_valid;
 	row.heading_hold_active = result.debug.heading_hold_active;
 	row.heading_tracking_error_rad = result.debug.heading_tracking_error_rad;
@@ -209,6 +220,7 @@ TelemetryRow make_telemetry_row(std::uint64_t timestamp_us,
 	row.wall_corner_confirmed = result.debug.wall_corner_confirmed;
 	row.wall_corner_trigger_active = result.debug.wall_corner_trigger_active;
 	row.front_wall_fallback_active = result.debug.front_wall_fallback_active;
+	row.turn_trigger_evaluated = result.debug.turn_trigger_evaluated;
 	row.stanley_cross_track_term_rad =
 		result.debug.stanley_cross_track_term_rad;
 	row.stanley_heading_term_rad = result.debug.stanley_heading_term_rad;
@@ -233,6 +245,15 @@ TelemetryRow make_telemetry_row(std::uint64_t timestamp_us,
 	if (output.has_value()) {
 		row.wheel_rpm = output->wheel_rpm;
 		row.servo_pulse_us = output->servo_pulse_us;
+	}
+
+	if (odometry.has_value()) {
+		row.pose_timestamp_us = odometry->pose_timestamp_us;
+		row.otos_velocity_x_mps = odometry->velocity_x_mps;
+		row.otos_velocity_y_mps = odometry->velocity_y_mps;
+		row.otos_yaw_rate_rps = odometry->yaw_rate_rps;
+		row.otos_accel_x_mps2 = odometry->accel_x_mps2;
+		row.otos_accel_y_mps2 = odometry->accel_y_mps2;
 	}
 
 	return row;

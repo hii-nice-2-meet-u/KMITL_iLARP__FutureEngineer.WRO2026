@@ -10,9 +10,50 @@
 
 namespace logging {
 
+// ---------------------------------------------------------------------------
+// Missing-value convention (see docs OBSERVABILITY_AND_DATA_INTEGRITY.md §4)
+//
+// A numeric column of value 0 means "measured, and the measurement was zero".
+// It NEVER means "not measured". Any group that can be absent carries a
+// paired boolean flag, and that flag is written in every navigation mode --
+// not only in the mode that happens to compute the value. Consumers must gate
+// on the flag before plotting or averaging the number.
+//
+//   outer_distance_m / inner_distance_m / wall_angle_rad
+//                                     -> outer_wall_valid / inner_wall_valid
+//   distance_error_m / angle_error_rad -> wall_following_active
+//   effective_turn_trigger_m, wall_corner_*
+//                                     -> turn_trigger_evaluated
+//
+// Do not express absence as NaN: to_csv_row uses fixed/precision(6) and a
+// "nan" token parses inconsistently across tools.
+// ---------------------------------------------------------------------------
+
 struct OutputSnapshot {
 	std::int16_t wheel_rpm{0};
 	std::uint16_t servo_pulse_us{1475};
+};
+
+// Raw OTOS output, before the control path reduces it.
+//
+// The controller consumes only hypot(vx, vy), which is unsigned: it cannot tell
+// reversing from driving forward, and it discards the velocity direction that
+// carries sideslip. getPosVelAcc() also returns acceleration and yaw rate every
+// tick, both of which were previously read and thrown away. Yaw rate in
+// particular is what makes the servo-pulse -> wheel-angle curve identifiable
+// offline via delta = atan(wheelbase * yaw_rate / speed).
+//
+// pose_timestamp_us shares the steady_clock epoch with TimedLidarData, so
+// (pose_timestamp_us - timestamp_us) is the real scan-to-pose skew. Both were
+// previously logged under the scan timestamp alone, which reported two sensors
+// read at different moments as if they were simultaneous.
+struct OdometrySample {
+	std::uint64_t pose_timestamp_us{0};
+	float velocity_x_mps{0.0f};
+	float velocity_y_mps{0.0f};
+	float yaw_rate_rps{0.0f};
+	float accel_x_mps2{0.0f};
+	float accel_y_mps2{0.0f};
 };
 
 struct TelemetryRow {
@@ -31,6 +72,15 @@ struct TelemetryRow {
 	float heading_rad{0.0f};
 	float measured_speed_mps{0.0f};
 
+	// Raw OTOS channels; see OdometrySample. measured_speed_mps above is the
+	// unsigned magnitude the controller actually used.
+	std::uint64_t pose_timestamp_us{0};
+	float otos_velocity_x_mps{0.0f};
+	float otos_velocity_y_mps{0.0f};
+	float otos_yaw_rate_rps{0.0f};
+	float otos_accel_x_mps2{0.0f};
+	float otos_accel_y_mps2{0.0f};
+
 	// Wall-following measurements and controller errors.
 	float outer_distance_m{0.0f};
 	float inner_distance_m{0.0f};
@@ -40,6 +90,7 @@ struct TelemetryRow {
 	bool outer_wall_valid{false};
 	bool inner_wall_valid{false};
 	bool corridor_center_active{false};
+	bool wall_following_active{false};
 	bool front_wall_valid{false};
 
 	// Heading fallback and corner tracking state.
@@ -68,6 +119,7 @@ struct TelemetryRow {
 	bool wall_corner_confirmed{false};
 	bool wall_corner_trigger_active{false};
 	bool front_wall_fallback_active{false};
+	bool turn_trigger_evaluated{false};
 
 	// Controller internals, so PID/Stanley gains can be tuned from a log
 	// instead of only from the summed steering command.
@@ -146,6 +198,9 @@ struct CornerRow {
 struct WallRow {
 	std::uint64_t timestamp_us{0};
 	const char *wall_role{"LEFT"};
+	// Wall geometry is recorded in every mode, so the reader can filter rather
+	// than being handed a file that silently contains only straights.
+	const char *mode{"UNKNOWN"};
 	float pos_x_m{0.0f};
 	float pos_y_m{0.0f};
 	float heading_rad{0.0f};
@@ -170,6 +225,7 @@ TelemetryRow make_telemetry_row(std::uint64_t timestamp_us,
 	const navigation::MapPose &pose, float measured_speed_mps,
 	const navigation::NavigationState &state,
 	const navigation::NavigationResult &result, std::size_t obstacle_count,
-	const std::optional<OutputSnapshot> &output = std::nullopt);
+	const std::optional<OutputSnapshot> &output = std::nullopt,
+	const std::optional<OdometrySample> &odometry = std::nullopt);
 
 } // namespace logging
