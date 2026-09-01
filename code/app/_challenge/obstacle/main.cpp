@@ -225,13 +225,27 @@ int main(int, char **argv) {
 			track_map.replay_hint(pose, navigation.state().corner_index);
 		const float wall_correction_rad = open_challenge::normalize_angle(
 			heading_rad - navigation.state().target_heading_rad);
+		const auto lidar_process_start = std::chrono::steady_clock::now();
 		const auto processed_lidar = open_challenge::process_scan(
 			lidar_processor, scan, wall_correction_rad);
+		logging::StageTiming stage_timing;
+		stage_timing.lidar_process_us =
+			static_cast<std::uint32_t>(
+				std::chrono::duration_cast<std::chrono::microseconds>(
+					std::chrono::steady_clock::now() - lidar_process_start)
+					.count());
 
 		TimedFrameData frame;
 		camera::ProcessedCameraData processed_camera;
 		if (camera.get_latest(frame) && !frame.frame.empty()) {
+			const auto camera_process_start = std::chrono::steady_clock::now();
 			processed_camera = camera_processor.process(frame);
+			stage_timing.camera_process_us =
+				static_cast<std::uint32_t>(
+					std::chrono::duration_cast<std::chrono::microseconds>(
+						std::chrono::steady_clock::now() - camera_process_start)
+						.count());
+			stage_timing.camera_process_valid = true;
 		}
 		const auto fused =
 			perception.process(processed_lidar, processed_camera, pose);
@@ -383,7 +397,7 @@ int main(int, char **argv) {
 		logging::TelemetryRow telemetry_row =
 			logging::make_telemetry_row(scan.timestamp_us, pose, speed_mps,
 				state, result, fused.obstacles.size(), output, odometry,
-				battery);
+				battery, stage_timing);
 		// Written every tick, including ticks where avoidance is inactive, so
 		// an activation can be read against the surrounding navigation state.
 		telemetry_row.obstacle_active = obstacle_status.active;

@@ -69,6 +69,18 @@ struct BatterySample {
 	bool valid{false};
 };
 
+// Wall-clock time spent inside each per-tick processing stage, measured on the
+// steady_clock at the app call sites. update_dt_s is the clamped loop period
+// and raw_update_dt_s the pre-clamp period; neither says where the time went.
+// lidar runs every tick, so lidar_process_us is always measured when this is
+// supplied. camera runs only when a frame arrived (and never in the open app),
+// so camera_process_valid distinguishes "ran fast" from "did not run".
+struct StageTiming {
+	std::uint32_t lidar_process_us{0};
+	std::uint32_t camera_process_us{0};
+	bool camera_process_valid{false};
+};
+
 struct TelemetryRow {
 	// Monotonic per-run counter. AsyncCsvWriter drops the oldest row when its
 	// queue is full and leaves no marker, so a gap in this column is the only
@@ -99,6 +111,11 @@ struct TelemetryRow {
 	float battery_voltage_v{0.0f};
 	std::uint64_t battery_sample_age_us{0};
 	bool battery_valid{false};
+
+	// Per-stage processing time; see StageTiming.
+	std::uint32_t lidar_process_us{0};
+	std::uint32_t camera_process_us{0};
+	bool camera_process_valid{false};
 
 	// Wall-following measurements and controller errors.
 	float outer_distance_m{0.0f};
@@ -262,6 +279,7 @@ TelemetryRow make_telemetry_row(std::uint64_t timestamp_us,
 	const navigation::NavigationResult &result, std::size_t obstacle_count,
 	const std::optional<OutputSnapshot> &output = std::nullopt,
 	const std::optional<OdometrySample> &odometry = std::nullopt,
-	const std::optional<BatterySample> &battery = std::nullopt);
+	const std::optional<BatterySample> &battery = std::nullopt,
+	const std::optional<StageTiming> &timing = std::nullopt);
 
 } // namespace logging

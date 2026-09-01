@@ -217,8 +217,16 @@ int main(int argc, char **argv) {
 
 		const float wall_correction_rad = open_challenge::normalize_angle(
 			heading_rad - navigation.state().target_heading_rad);
+		const auto lidar_process_start = std::chrono::steady_clock::now();
 		const auto processed = open_challenge::process_scan(
 			lidar_processor, scan, wall_correction_rad);
+		logging::StageTiming stage_timing;
+		stage_timing.lidar_process_us =
+			static_cast<std::uint32_t>(
+				std::chrono::duration_cast<std::chrono::microseconds>(
+					std::chrono::steady_clock::now() - lidar_process_start)
+					.count());
+		// The open app has no camera stage; camera_process_valid stays false.
 		auto result = navigation.update(
 			processed, heading_rad, speed_mps, replay_hint, map_pose);
 		const auto &state = navigation.state();
@@ -378,7 +386,7 @@ int main(int argc, char **argv) {
 		telemetry_log.record(
 			logging::make_telemetry_row(scan.timestamp_us, map_pose, speed_mps,
 				state, result, processed.obstacles.size(), output, odometry,
-				battery));
+				battery, stage_timing));
 		wall_log.record(
 			processed.walls, state.mode, map_pose, scan.timestamp_us);
 		segment_log.record(processed, state.mode);
