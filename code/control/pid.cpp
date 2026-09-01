@@ -30,15 +30,17 @@ float PID::calculate(float setpoint, float current, float dt_s) {
 		previous_error_ = error;
 		initialized_ = true;
 
-		const float output = config_.kp * error;
-		return std::clamp(output, config_.min_output, config_.max_output);
+		last_output_ =
+			std::clamp(config_.kp * error, config_.min_output, config_.max_output);
+		return last_output_;
 	}
 
 	if (dt_s <= 0.0f) {
 
-		const float output = config_.kp * error;
 		previous_error_ = error;
-		return std::clamp(output, config_.min_output, config_.max_output);
+		last_output_ =
+			std::clamp(config_.kp * error, config_.min_output, config_.max_output);
+		return last_output_;
 	}
 
 	const float dt = std::clamp(dt_s, 1e-4f, std::max(1e-4f, config_.max_dt_s));
@@ -63,6 +65,7 @@ float PID::calculate(float setpoint, float current, float dt_s) {
 	}
 
 	previous_error_ = error;
+	last_output_ = output;
 
 	return output;
 }
@@ -72,6 +75,8 @@ void PID::reset() {
 	integral_ = 0.0f;
 
 	previous_error_ = 0.0f;
+
+	last_output_ = 0.0f;
 
 	previous_time_ = Clock::time_point{};
 

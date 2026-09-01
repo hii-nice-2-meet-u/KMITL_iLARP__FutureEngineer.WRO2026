@@ -18,6 +18,9 @@ float StanleyController::calculate(float cross_track_error_m,
 
 	const float steering = heading_term + cross_track_term;
 
+	last_cross_track_term_rad_ = cross_track_term;
+	last_heading_term_rad_ = heading_term;
+
 	return std::clamp(
 		steering, -config_.max_steering_rad, config_.max_steering_rad);
 }
@@ -28,6 +31,10 @@ void StanleyController::set_config(const StanleyConfig &config) {
 	heading_pid_.set_config(config.heading_pid);
 }
 
-void StanleyController::reset() { heading_pid_.reset(); }
+void StanleyController::reset() {
+	heading_pid_.reset();
+	last_cross_track_term_rad_ = 0.0f;
+	last_heading_term_rad_ = 0.0f;
+}
 
 } // namespace control

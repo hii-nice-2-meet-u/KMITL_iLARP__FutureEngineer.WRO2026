@@ -33,6 +33,13 @@ class PID {
 
 	float error() const { return previous_error_; }
 
+	// Telemetry accessors. They expose internal state so a caller can log the
+	// controller's own contribution instead of only the summed command; tuning
+	// kp/ki/kd from a combined output alone is guesswork.
+	float integral() const { return integral_; }
+
+	float last_output() const { return last_output_; }
+
   private:
 	using Clock = std::chrono::steady_clock;
 
@@ -40,6 +47,7 @@ class PID {
 
 	float integral_{0.0f};
 	float previous_error_{0.0f};
+	float last_output_{0.0f};
 
 	Clock::time_point previous_time_{};
 

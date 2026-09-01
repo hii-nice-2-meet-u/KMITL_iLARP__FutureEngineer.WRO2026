@@ -56,9 +56,21 @@ class StanleyController {
 
 	const StanleyConfig &config() const { return config_; }
 
+	// Telemetry accessors for the two terms the controller sums internally.
+	// Tuning k against the combined output is not possible: a cross-track
+	// correction and a heading correction of opposite sign look identical to
+	// a well-behaved controller once added together.
+	float last_cross_track_term_rad() const { return last_cross_track_term_rad_; }
+
+	float last_heading_term_rad() const { return last_heading_term_rad_; }
+
+	float heading_integral() const { return heading_pid_.integral(); }
+
   private:
 	StanleyConfig config_;
 	mutable PID heading_pid_;
+	mutable float last_cross_track_term_rad_{0.0f};
+	mutable float last_heading_term_rad_{0.0f};
 };
 
 } // namespace control
