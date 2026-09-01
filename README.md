@@ -3,10 +3,11 @@
 > Autonomous mobile robot developed by **KMITL iLARP** for the
 > **World Robot Olympiad 2026 — Future Engineers** category.
 
-<!-- TODO (team): add the main robot photo to docs/resources/robot_main.jpg -->
 <p align="center">
-  <img src="docs/resources/robot_main.jpg" width="700" alt="KMITL iLARP WRO 2026 Robot">
+  <img src="v-photos/front.jpg" alt="KMITL iLARP autonomous mobile robot — front view" width="820" height="461" style="object-fit: cover; object-position: center;">
 </p>
+
+<p align="center"><strong>Sense. Decide. Move.</strong><br>Autonomous mobile robot for WRO Future Engineers 2026</p>
 
 ---
 
@@ -14,28 +15,33 @@
 
 **KMITL iLARP** — World Robot Olympiad 2026, Future Engineers category.
 
-> ⚠️ **TODO (team):** List team members (name + role). Example:
->
-> | Name       | Role                        |
-> | ---------- | --------------------------- |
-> | _member 1_ | _software / vision_         |
-> | _member 2_ | _mechanical / CAD_          |
-> | _member 3_ | _electronics / integration_ |
+The repository identifies the team as **KMITL iLARP**. Individual names and
+roles are not stored in the source tree.
 
 ## **Robot Images**
 
-Photos of the robot from every side are in [`v-photos/`](v-photos/), and team
-photos are in [`t-photos/`](t-photos/).
+The robot combines camera vision, LiDAR, odometry, and model-based control in a
+compact four-wheel platform. Explore the complete six-view build below or open
+the full-resolution originals in [`v-photos/`](v-photos/).
 
-> ⚠️ **TODO (team):** Once the photos are added, embed the six vehicle views
-> here (front / back / left / right / top / bottom).
+<table>
+  <tr>
+    <td align="center"><a href="v-photos/front.jpg"><img src="v-photos/front.jpg" alt="Robot front view" width="280" height="158" style="object-fit: cover; object-position: center;"></a><br><sub><strong>Front</strong> </sub></td>
+    <td align="center"><a href="v-photos/back.jpg"><img src="v-photos/back.jpg" alt="Robot back view" width="280" height="158" style="object-fit: cover; object-position: center;"></a><br><sub><strong>Back</strong> </sub></td>
+    <td align="center"><a href="v-photos/left_side.jpg"><img src="v-photos/left_side.jpg" alt="Robot left-side view" width="280" height="158" style="object-fit: cover; object-position: center;"></a><br><sub><strong>Left side</strong> </sub></td>
+  </tr>
+  <tr>
+    <td align="center"><a href="v-photos/right.jpg"><img src="v-photos/right.jpg" alt="Robot right-side view" width="280" height="158" style="object-fit: cover; object-position: center;"></a><br><sub><strong>Right side</strong> </sub></td>
+    <td align="center"><a href="v-photos/top.jpg"><img src="v-photos/top.jpg" alt="Robot top view" width="280" height="158" style="object-fit: cover; object-position: center;"></a><br><sub><strong>Top</strong> · Sensor layout</sub></td>
+    <td align="center"><a href="v-photos/bottom.jpg"><img src="v-photos/bottom.jpg" alt="Robot bottom view" width="280" height="158" style="object-fit: cover; object-position: center;"></a><br><sub><strong>Bottom</strong> </sub></td>
+  </tr>
+</table>
 
 ## **Performance Video**
 
-Autonomous-run videos (one per challenge, ≥30 s each) are linked in
-[`video/video.md`](video/video.md).
+Open Challenge link:
 
-> ⚠️ **TODO (team):**  YouTube links.
+Obstacle Challenge link:
 
 ## **Documentation**
 
@@ -44,6 +50,11 @@ Detailed per-subsystem engineering documentation lives in
 [Vision](docs/vision/README.md) ·
 [LiDAR](docs/lidar/README.md) ·
 [Odometry](docs/odometry/README.md) ·
+[Perception](docs/perception/README.md) ·
+[Navigation](docs/navigation/README.md) ·
+[Control](docs/control/README.md) ·
+[SPI](docs/spi/README.md) ·
+[Logging](docs/logging/README.md) ·
 [Software Architecture](docs/software/README.md) ·
 [Mechanical](docs/mechanical/README.md) ·
 [Electronics](docs/electronics/README.md).
@@ -218,7 +229,8 @@ Navigation State Machine
 Path Decision
 ```
 
-Documentation: `docs/software/README.md` (navigation/state-machine layer — planned, see roadmap)
+Documentation: `docs/navigation/README.md` (state machine, corner trajectory, track map)
+Source Code: `code/modules/navigation`
 
 ---
 
@@ -233,48 +245,8 @@ The motion controller converts navigation outputs into actuator commands.
 - Speed regulation
 - Stability correction loop
 
-### Smooth High-Speed Cornering
-
-The Open Challenge controller follows the outer wall on each straight with a
-Stanley controller, then follows a geometric 90-degree heading trajectory at a
-corner. It does not command the final heading immediately. Instead, it advances
-a moving reference at `yaw_rate = speed / corner_radius` and combines heading
-feedback with Ackermann feed-forward:
-
-```text
-feed_forward_steering = atan(wheelbase / corner_radius)
-corner_speed_limit    = sqrt(max_lateral_acceleration * corner_radius)
-```
-
-The current track baseline uses a 0.40 m vehicle-path radius: the field's
-0.10 m outer-wall corner radius plus the 0.30 m wall-following offset. Steering
-is blended over the first 10 degrees and final 22 degrees of a corner. A
-35 ms low-pass filter, a 7 rad/s steering slew limit, acceleration limits, and
-a two-frame speed-preview trigger prevent step commands and LiDAR-induced
-jitter. The current no-actuator test profile requests 0.85 m/s on a straight,
-0.72 m/s on approach, and 0.65 m/s through the corner.
-
-`wheelbase_m` is currently a documented 0.18 m assumption. The team must
-measure rear-axle-center to front-axle-center distance on the final chassis and
-update this value before physical track tuning. `test_lidar` only visualizes
-navigation outputs; it intentionally sends no motor or servo commands.
-
-A deterministic kinematic-bicycle simulation covers both clockwise and
-counter-clockwise turns:
-
-```bash
-cmake -S code -B build -DILARP_BUILD_TESTS=ON
-cmake --build build --target navigation_corner_sim_test
-ctest --test-dir build --output-on-failure
-```
-
-The simulation checks direction, turn convergence, steering sign, physical
-steering limit, non-saturation of the nominal raw command, slew rate, final
-heading error, and minimum mid-corner speed. Real-track tuning must still log
-lap time, minimum wall clearance, peak heading error, and intervention rate;
-speed should only be raised when all clearance runs pass.
-
-Documentation: `docs/software/README.md` (motion-control layer — planned, see roadmap)
+Documentation: `docs/control/README.md` (PID + Stanley) · `docs/spi/README.md` (STM32 link)
+Source Code: `code/control`, `code/modules/spi`
 
 ---
 
@@ -284,16 +256,22 @@ The system is implemented in C++17 and structured into modular components.
 
 ```text
 code/
-├── app/                 # test_camera, test_lidar, adjust_HSV, adjust_white, camera_tuner
+├── common/              # direction.hpp (DrivingDirection, TurnDirection)
+├── app/
+│   ├── _challenge/open/ # open_challenge_main (learn+replay) + actuator
+│   ├── test_camera/ test_lidar/ test_perception/ test_otos/ test_spi/
+│   └── adjust_HSV/ adjust_white/ camera_tuner/
 ├── modules/
 │   ├── camera/          # CameraModule + CameraProcessor
-│   ├── lidar/           # LidarModule + LidarProcessor
-│   └── otos/            # OTOS odometry + LinuxI2C
+│   ├── lidar/           # LidarModule + LidarProcessor (walls, obstacles, parking)
+│   ├── otos/            # OTOS odometry + LinuxI2C
+│   ├── perception/      # camera + LiDAR fusion → FusedObstacle
+│   ├── navigation/      # state machine, corner trajectory, init_direction, track_map
+│   ├── spi/             # SPI master → STM32 (motor/servo/battery)
+│   └── logging/         # async CSV telemetry (Logger V1)
+├── control/             # PID + Stanley controllers
 ├── external/            # git submodules (see .gitmodules)
-│   ├── LCCV/
-│   ├── rplidar_sdk/
-│   ├── OTOS/
-│   └── SparkFunToolkit/
+│   ├── LCCV/ rplidar_sdk/ OTOS/ SparkFunToolkit/
 ├── utils/               # RingBuffer.hpp
 ├── build_n_deploy.sh
 ├── CMakeLists.txt
@@ -346,9 +324,10 @@ cd code
 The script runs CMake + Ninja (with ccache) inside the `cross-pi` container,
 installs to `code/dist/install`, then `rsync`s the result to the Pi over SSH.
 
-> ⚠️ **TODO (team):** Note the exact OS image / dependencies installed on the Pi
-> (libcamera, OpenCV runtime) and how each test/challenge binary is launched on
-> the robot, so a judge can reproduce a run.
+The deployment script targets Raspberry Pi 5, but the exact OS image and
+runtime package list are not recorded in this repository. The installed Open
+Challenge executable is `challenge/open/open_challenge_main`; test and tuning
+executables are installed from their corresponding `code/app/*/CMakeLists.txt`.
 
 ---
 
@@ -413,17 +392,19 @@ Tools Directory: `code/app/`
 KMITL_iLARP__FutureEngineer.WRO2026/
 ├── CAD/                 # SolidWorks / STEP mechanical models
 ├── code/
-│   ├── app/             # test & calibration tools
-│   ├── modules/         # camera, lidar, otos (hardware + processing)
+│   ├── common/          # shared enums
+│   ├── app/             # challenge programs + test & calibration tools
+│   ├── modules/         # camera, lidar, otos, perception, navigation, spi, logging
+│   ├── control/         # PID + Stanley
 │   ├── external/        # vendored SDKs (git submodules)
 │   └── utils/           # RingBuffer
 ├── docs/
-│   ├── vision/          # camera pipeline & detection
-│   ├── lidar/           # scan processing, walls, obstacles
-│   ├── odometry/        # OTOS pose
-│   ├── software/        # architecture, threading, build/deploy, roadmap
-│   ├── mechanical/      # chassis, steering, drivetrain
-│   └── electronics/     # components, wiring, power budget
+│   ├── vision/  lidar/  odometry/       # perception
+│   ├── perception/  navigation/  control/  spi/  logging/   # decision + actuation
+│   ├── software/                        # architecture, build/deploy
+│   ├── mechanical/  electronics/        # hardware
+│   └── resources/                       # images referenced by the docs
+├── t-photos/  v-photos/  video/         # required WRO submissions
 ├── README.md
 └── LICENSE
 ```
