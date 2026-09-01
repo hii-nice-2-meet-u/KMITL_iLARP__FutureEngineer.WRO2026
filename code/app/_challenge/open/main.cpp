@@ -393,6 +393,7 @@ int main(int argc, char **argv) {
 			static_cast<int>(processed.reject_stats.rejected_quality);
 		telemetry_row.lidar_points_rejected_range =
 			static_cast<int>(processed.reject_stats.rejected_range);
+		telemetry_row.wall_correction_rad = wall_correction_rad;
 		telemetry_log.record(telemetry_row);
 		wall_log.record(
 			processed.walls, state.mode, map_pose, scan.timestamp_us);

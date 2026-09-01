@@ -211,6 +211,12 @@ struct TelemetryRow {
 	int lidar_points_rejected_quality{0};
 	int lidar_points_rejected_range{0};
 
+	// Heading correction (heading_rad - target_heading_rad) applied to wall
+	// resolution before classification. wall_angle_rad and walls.csv are in
+	// this corrected frame, not the raw sensor frame; subtract this to recover
+	// raw geometry offline.
+	float wall_correction_rad{0.0f};
+
 	// Final navigation command and detected LiDAR-object count.
 	float target_speed_mps{0.0f};
 	float steering_rad{0.0f};

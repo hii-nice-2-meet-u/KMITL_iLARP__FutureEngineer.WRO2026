@@ -102,6 +102,12 @@ process(data, heading_error_rad = 0,
         max_collinear_error_m = 0.03, max_segment_gap_m = 0.05)
 ```
 
+> **Logged geometry is in the corrected frame.** Because `heading_error_rad`
+> de-rotates the scan before classification, the `wall_angle_rad` column in
+> `telemetry.csv` and every angle in `walls.csv` are expressed in this corrected
+> frame, not the raw sensor frame. The correction applied on each tick is logged
+> as `wall_correction_rad`; subtract it to recover raw measured geometry offline.
+
 ### 3.1 Point filtering & coordinate frame
 
 `is_valid_point()` drops points with `quality < 50` or `distance < 0.01 m`.
