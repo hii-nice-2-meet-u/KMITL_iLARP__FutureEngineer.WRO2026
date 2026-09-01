@@ -16,6 +16,10 @@ struct OutputSnapshot {
 };
 
 struct TelemetryRow {
+	// Monotonic per-run counter. AsyncCsvWriter drops the oldest row when its
+	// queue is full and leaves no marker, so a gap in this column is the only
+	// way to tell a dropped row from a slow loop iteration.
+	std::uint64_t row_index{0};
 	std::uint64_t timestamp_us{0};
 	int lap{0};
 	std::size_t corner_index{0};
@@ -65,11 +69,50 @@ struct TelemetryRow {
 	bool wall_corner_trigger_active{false};
 	bool front_wall_fallback_active{false};
 
+	// Controller internals, so PID/Stanley gains can be tuned from a log
+	// instead of only from the summed steering command.
+	float stanley_cross_track_term_rad{0.0f};
+	float stanley_heading_term_rad{0.0f};
+	float stanley_heading_integral{0.0f};
+	float turn_heading_pid_output_rad{0.0f};
+	float turn_heading_pid_integral{0.0f};
+
+	// Turn-trigger attribution and gate state.
+	int turn_trigger_source{0};
+	int turn_trigger_frames{0};
+	bool turn_armed{false};
+	bool replay_gate_suppressed{false};
+
+	// Pre-clamp loop period. update_dt_s is clamped, so a stalled iteration is
+	// invisible there.
+	float raw_update_dt_s{0.0f};
+
 	// Learned-map preview state used by replay navigation.
 	bool map_preview_valid{false};
 	bool map_approach_active{false};
 	float map_distance_to_corner_m{0.0f};
 	float map_confidence{0.0f};
+
+	// Obstacle avoidance. Populated every tick by the obstacle-challenge app,
+	// including ticks where avoidance is inactive, so an activation can be
+	// read against the surrounding navigation state.
+	bool obstacle_active{false};
+	int obstacle_color{0};	   // 0 none, 1 RED, 2 GREEN
+	int obstacle_pass_side{0}; // 0 none, 1 RIGHT, 2 LEFT
+	float obstacle_forward_m{0.0f};
+	float obstacle_right_m{0.0f};
+	float obstacle_target_right_m{0.0f};
+	float obstacle_steering_rad{0.0f};
+	float obstacle_confidence{0.0f};
+	float obstacle_world_x_m{0.0f};
+	float obstacle_world_y_m{0.0f};
+
+	// Camera/LiDAR fusion counters from PerceptionDiagnostics.
+	int lidar_valid_count{0};
+	int camera_valid_count{0};
+	int matched_count{0};
+	int frame_confirmed_count{0};
+	bool camera_time_synchronized{false};
 
 	// Final navigation command and detected LiDAR-object count.
 	float target_speed_mps{0.0f};

@@ -21,13 +21,19 @@ class TelemetryLogger {
 	explicit TelemetryLogger(const std::string &run_directory);
 
 	bool is_open() const { return writer_ && writer_->is_open(); }
-	void record(const TelemetryRow &row);
+
+	// Stamps row.row_index with a monotonic per-run counter before writing.
+	// The writer drops the oldest queued row when it is saturated and leaves
+	// no marker in the file, so a gap in row_index is the only way to tell a
+	// dropped row from a merely slow loop iteration.
+	void record(TelemetryRow row);
 	bool flush();
 	bool has_write_error() const;
 	std::size_t dropped_row_count() const;
 
   private:
 	std::unique_ptr<AsyncCsvWriter> writer_;
+	std::uint64_t next_row_index_{0};
 };
 
 class EventLogger {

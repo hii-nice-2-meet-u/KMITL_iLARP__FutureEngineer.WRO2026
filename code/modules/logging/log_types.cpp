@@ -17,7 +17,7 @@ void write_optional(
 } // namespace
 
 const char *telemetry_csv_header() {
-	return "timestamp_us,lap,corner_index,mode,"
+	return "row_index,timestamp_us,lap,corner_index,mode,"
 		   "pos_x_m,pos_y_m,heading_rad,measured_speed_mps,"
 		   "outer_distance_m,inner_distance_m,distance_error_m,wall_angle_rad,"
 		   "angle_error_rad,outer_wall_valid,inner_wall_valid,"
@@ -31,8 +31,19 @@ const char *telemetry_csv_header() {
 		   "wall_corner_lateral_m,wall_corner_stability_error_m,"
 		   "wall_corner_confirm_frames,wall_corner_candidate_valid,"
 		   "wall_corner_confirmed,wall_corner_trigger_active,"
-		   "front_wall_fallback_active,map_preview_valid,"
+		   "front_wall_fallback_active,"
+		   "stanley_cross_track_term_rad,stanley_heading_term_rad,"
+		   "stanley_heading_integral,turn_heading_pid_output_rad,"
+		   "turn_heading_pid_integral,turn_trigger_source,"
+		   "turn_trigger_frames,turn_armed,replay_gate_suppressed,"
+		   "raw_update_dt_s,map_preview_valid,"
 		   "map_approach_active,map_distance_to_corner_m,map_confidence,"
+		   "obstacle_active,obstacle_color,obstacle_pass_side,"
+		   "obstacle_forward_m,obstacle_right_m,obstacle_target_right_m,"
+		   "obstacle_steering_rad,obstacle_confidence,"
+		   "obstacle_world_x_m,obstacle_world_y_m,"
+		   "lidar_valid_count,camera_valid_count,matched_count,"
+		   "frame_confirmed_count,camera_time_synchronized,"
 		   "target_speed_mps,steering_rad,obstacle_count,"
 		   "wheel_rpm,servo_pulse_us";
 }
@@ -54,7 +65,8 @@ std::string to_csv_row(const TelemetryRow &row) {
 	std::ostringstream stream;
 	stream.setf(std::ios::fixed);
 	stream.precision(6);
-	stream << row.timestamp_us << ',' << row.lap << ',' << row.corner_index
+	stream << row.row_index << ',' << row.timestamp_us << ',' << row.lap
+		   << ',' << row.corner_index
 		   << ',' << row.mode << ',' << row.pos_x_m << ',' << row.pos_y_m << ','
 		   << row.heading_rad << ',' << row.measured_speed_mps << ','
 		   << row.outer_distance_m << ',' << row.inner_distance_m << ','
@@ -80,9 +92,27 @@ std::string to_csv_row(const TelemetryRow &row) {
 		   << (row.wall_corner_confirmed ? 1 : 0) << ','
 		   << (row.wall_corner_trigger_active ? 1 : 0) << ','
 		   << (row.front_wall_fallback_active ? 1 : 0) << ','
+		   << row.stanley_cross_track_term_rad << ','
+		   << row.stanley_heading_term_rad << ','
+		   << row.stanley_heading_integral << ','
+		   << row.turn_heading_pid_output_rad << ','
+		   << row.turn_heading_pid_integral << ','
+		   << row.turn_trigger_source << ',' << row.turn_trigger_frames << ','
+		   << (row.turn_armed ? 1 : 0) << ','
+		   << (row.replay_gate_suppressed ? 1 : 0) << ','
+		   << row.raw_update_dt_s << ','
 		   << (row.map_preview_valid ? 1 : 0) << ','
 		   << (row.map_approach_active ? 1 : 0) << ','
 		   << row.map_distance_to_corner_m << ',' << row.map_confidence << ','
+		   << (row.obstacle_active ? 1 : 0) << ',' << row.obstacle_color
+		   << ',' << row.obstacle_pass_side << ','
+		   << row.obstacle_forward_m << ',' << row.obstacle_right_m << ','
+		   << row.obstacle_target_right_m << ','
+		   << row.obstacle_steering_rad << ',' << row.obstacle_confidence
+		   << ',' << row.obstacle_world_x_m << ',' << row.obstacle_world_y_m
+		   << ',' << row.lidar_valid_count << ',' << row.camera_valid_count
+		   << ',' << row.matched_count << ',' << row.frame_confirmed_count
+		   << ',' << (row.camera_time_synchronized ? 1 : 0) << ','
 		   << row.target_speed_mps << ',' << row.steering_rad << ','
 		   << row.obstacle_count << ',';
 	write_optional(stream, row.wheel_rpm);
@@ -179,6 +209,19 @@ TelemetryRow make_telemetry_row(std::uint64_t timestamp_us,
 	row.wall_corner_confirmed = result.debug.wall_corner_confirmed;
 	row.wall_corner_trigger_active = result.debug.wall_corner_trigger_active;
 	row.front_wall_fallback_active = result.debug.front_wall_fallback_active;
+	row.stanley_cross_track_term_rad =
+		result.debug.stanley_cross_track_term_rad;
+	row.stanley_heading_term_rad = result.debug.stanley_heading_term_rad;
+	row.stanley_heading_integral = result.debug.stanley_heading_integral;
+	row.turn_heading_pid_output_rad =
+		result.debug.turn_heading_pid_output_rad;
+	row.turn_heading_pid_integral = result.debug.turn_heading_pid_integral;
+	row.turn_trigger_source =
+		static_cast<int>(result.debug.turn_trigger_source);
+	row.turn_trigger_frames = result.debug.turn_trigger_frames;
+	row.turn_armed = result.debug.turn_armed;
+	row.replay_gate_suppressed = result.debug.replay_gate_suppressed;
+	row.raw_update_dt_s = result.debug.raw_update_dt_s;
 	row.map_preview_valid = result.debug.map_preview_valid;
 	row.map_approach_active = result.debug.map_approach_active;
 	row.map_distance_to_corner_m = result.debug.map_distance_to_corner_m;

@@ -290,6 +290,7 @@ class NavigationController {
 
 	std::uint64_t previous_timestamp_us_{0};
 	float last_elapsed_update_s_{0.0f};
+	float last_raw_update_dt_s_{0.0f};
 
 	float turn_start_heading_rad_{0.0f};
 	float turn_reference_heading_rad_{0.0f};

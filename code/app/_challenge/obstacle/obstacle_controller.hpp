@@ -37,6 +37,8 @@ struct ObstacleStatus {
 	float target_right_m{0.0f};
 	float steering_rad{0.0f};
 	float confidence{0.0f};
+	float world_x_m{0.0f};
+	float world_y_m{0.0f};
 };
 
 class ObstacleController {
@@ -108,6 +110,8 @@ class ObstacleController {
 		status.forward_m = relative.forward_m;
 		status.right_m = relative.right_m;
 		status.confidence = active_->confidence;
+		status.world_x_m = active_->x_m;
+		status.world_y_m = active_->y_m;
 
 		const float side = active_->pass_side == navigation::PassSide::RIGHT
 			? 1.0f

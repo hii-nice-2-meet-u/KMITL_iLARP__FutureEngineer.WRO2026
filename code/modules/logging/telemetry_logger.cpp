@@ -52,8 +52,9 @@ TelemetryLogger::TelemetryLogger(const std::string &run_directory)
 	: writer_(std::make_unique<AsyncCsvWriter>(
 		  run_directory + "/telemetry.csv", telemetry_csv_header())) {}
 
-void TelemetryLogger::record(const TelemetryRow &row) {
+void TelemetryLogger::record(TelemetryRow row) {
 	if (writer_) {
+		row.row_index = next_row_index_++;
 		writer_->push(to_csv_row(row));
 	}
 }

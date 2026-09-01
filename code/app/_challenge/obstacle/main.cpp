@@ -329,8 +329,39 @@ int main() {
 		const auto &actuator_telemetry = actuators.telemetry();
 		const logging::OutputSnapshot output{
 			actuator_telemetry.wheel_rpm, actuator_telemetry.servo_pulse_us};
-		telemetry_log.record(logging::make_telemetry_row(scan.timestamp_us,
-			pose, speed_mps, state, result, fused.obstacles.size(), output));
+		logging::TelemetryRow telemetry_row =
+			logging::make_telemetry_row(scan.timestamp_us, pose, speed_mps,
+				state, result, fused.obstacles.size(), output);
+		// Written every tick, including ticks where avoidance is inactive, so
+		// an activation can be read against the surrounding navigation state.
+		telemetry_row.obstacle_active = obstacle_status.active;
+		telemetry_row.obstacle_color = obstacle_status.color.has_value()
+			? (*obstacle_status.color == navigation::TrafficColor::RED ? 1 : 2)
+			: 0;
+		telemetry_row.obstacle_pass_side =
+			obstacle_status.pass_side.has_value()
+			? (*obstacle_status.pass_side == navigation::PassSide::RIGHT ? 1
+																		 : 2)
+			: 0;
+		telemetry_row.obstacle_forward_m = obstacle_status.forward_m;
+		telemetry_row.obstacle_right_m = obstacle_status.right_m;
+		telemetry_row.obstacle_target_right_m =
+			obstacle_status.target_right_m;
+		telemetry_row.obstacle_steering_rad = obstacle_status.steering_rad;
+		telemetry_row.obstacle_confidence = obstacle_status.confidence;
+		telemetry_row.obstacle_world_x_m = obstacle_status.world_x_m;
+		telemetry_row.obstacle_world_y_m = obstacle_status.world_y_m;
+		telemetry_row.lidar_valid_count =
+			static_cast<int>(fused.diagnostics.valid_lidar_count);
+		telemetry_row.camera_valid_count =
+			static_cast<int>(fused.diagnostics.valid_camera_count);
+		telemetry_row.matched_count =
+			static_cast<int>(fused.diagnostics.matched_count);
+		telemetry_row.frame_confirmed_count =
+			static_cast<int>(fused.diagnostics.frame_confirmed_count);
+		telemetry_row.camera_time_synchronized =
+			fused.diagnostics.camera_time_synchronized;
+		telemetry_log.record(telemetry_row);
 		wall_log.record(
 			processed_lidar.walls, state.mode, pose, scan.timestamp_us);
 
@@ -384,6 +415,12 @@ int main() {
 	const bool events_ok = event_log.has_value() ? event_log->flush() : true;
 	if (!corners_ok || !telemetry_ok || !walls_ok || !events_ok) {
 		std::cerr << "Logging write failure; run data may be incomplete\n";
+	}
+	if (telemetry_log.dropped_row_count() > 0 ||
+		wall_log.dropped_row_count() > 0) {
+		std::cerr << "Logging queue overflow: telemetry="
+				  << telemetry_log.dropped_row_count()
+				  << " walls=" << wall_log.dropped_row_count() << '\n';
 	}
 	if (final_voltage.has_value()) {
 		std::cout << "Battery voltage after run: " << *final_voltage << " V\n";

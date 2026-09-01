@@ -9,6 +9,16 @@ namespace navigation {
 
 enum class NavigationMode { SEARCH_DIRECTION, NORMAL, TURNING, FINISHED };
 
+// Which mechanism actually decided to start the current turn. Logged as a
+// small integer so a run can be attributed to a trigger source offline
+// instead of being inferred from a combination of booleans.
+enum class TurnTriggerSource {
+	NONE = 0,
+	INNER_CORNER = 1,	// confirmed wall-corner landmark (preferred)
+	FRONT_FALLBACK = 2, // front wall, close-range safety fallback
+	LEGACY_FRONT = 3	// front wall, no pose available for the landmark
+};
+
 struct NavigationCommand {
 	// SI-unit setpoints for the downstream actuator controller.
 	// speed: non-negative forward speed [m/s]
@@ -51,6 +61,26 @@ struct NavigationDebug {
 	float active_normal_speed_mps{0.0f};
 	float active_approach_speed_mps{0.0f};
 	int wall_corner_confirm_frames{0};
+
+	// Controller internals. These are what make the gains tunable from a log:
+	// the summed command alone cannot separate a cross-track correction from a
+	// heading correction of the opposite sign.
+	float stanley_cross_track_term_rad{0.0f};
+	float stanley_heading_term_rad{0.0f};
+	float stanley_heading_integral{0.0f};
+	float turn_heading_pid_output_rad{0.0f};
+	float turn_heading_pid_integral{0.0f};
+
+	// Turn-trigger diagnostics.
+	TurnTriggerSource turn_trigger_source{TurnTriggerSource::NONE};
+	int turn_trigger_frames{0};
+	bool turn_armed{false};
+	bool replay_gate_suppressed{false};
+
+	// Loop timing before clamping to [min_update_period_s, max_update_period_s].
+	// update_dt_s is the clamped value the controllers actually integrate with;
+	// a stalled iteration is indistinguishable from a healthy one there.
+	float raw_update_dt_s{0.0f};
 
 	bool outer_wall_valid{false};
 	bool inner_wall_valid{false};

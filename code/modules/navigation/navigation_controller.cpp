@@ -62,6 +62,15 @@ NavigationResult NavigationController::update(
 	result.debug.active_approach_speed_mps =
 		calculate_active_approach_speed_mps();
 	result.debug.update_dt_s = dt_s;
+	result.debug.raw_update_dt_s = last_raw_update_dt_s_;
+	result.debug.stanley_cross_track_term_rad =
+		stanley_.last_cross_track_term_rad();
+	result.debug.stanley_heading_term_rad = stanley_.last_heading_term_rad();
+	result.debug.stanley_heading_integral = stanley_.heading_integral();
+	result.debug.turn_heading_pid_output_rad = turn_heading_pid_.last_output();
+	result.debug.turn_heading_pid_integral = turn_heading_pid_.integral();
+	result.debug.turn_trigger_frames = turn_trigger_frames_;
+	result.debug.turn_armed = state_.turn_armed;
 
 	result.command = condition_command(result.command, speed_mps, dt_s,
 		state_.mode == NavigationMode::FINISHED);
@@ -85,6 +94,7 @@ void NavigationController::reset(float heading_rad) {
 
 	previous_timestamp_us_ = 0;
 	last_elapsed_update_s_ = 0.0f;
+	last_raw_update_dt_s_ = 0.0f;
 
 	turn_start_heading_rad_ = heading_rad;
 	turn_reference_heading_rad_ = heading_rad;
@@ -839,12 +849,16 @@ bool NavigationController::should_start_turn(
 
 	bool trigger_condition = false;
 	if (geometry_available && debug.wall_corner_confirmed) {
+		debug.turn_trigger_source = TurnTriggerSource::INNER_CORNER;
 		debug.effective_turn_trigger_m =
 			calculate_geometric_turn_trigger_m(speed_mps);
 		trigger_condition =
 			debug.wall_corner_forward_m <= debug.effective_turn_trigger_m;
 		debug.wall_corner_trigger_active = trigger_condition;
 	} else {
+		debug.turn_trigger_source = geometry_available
+			? TurnTriggerSource::FRONT_FALLBACK
+			: TurnTriggerSource::LEGACY_FRONT;
 		debug.effective_turn_trigger_m = geometry_available
 			? calculate_front_wall_fallback_trigger_m(speed_mps)
 			: calculate_effective_turn_trigger_m(speed_mps);
@@ -862,6 +876,7 @@ bool NavigationController::should_start_turn(
 				std::max(
 					0.0f, config_.replay_front_safety_override_distance_m);
 		if (!safety_override) {
+			debug.replay_gate_suppressed = trigger_condition;
 			trigger_condition = false;
 			debug.wall_corner_trigger_active = false;
 			debug.front_wall_fallback_active = false;
@@ -1094,6 +1109,8 @@ float NavigationController::calculate_dt_s(std::uint64_t timestamp_us) {
 		previous_timestamp_us_ = timestamp_us;
 	}
 	last_elapsed_update_s_ = std::max(0.0f, dt_s);
+
+	last_raw_update_dt_s_ = dt_s;
 
 	const float min_dt_s = std::max(1e-4f, config_.min_update_period_s);
 	const float max_dt_s = std::max(min_dt_s, config_.max_update_period_s);
