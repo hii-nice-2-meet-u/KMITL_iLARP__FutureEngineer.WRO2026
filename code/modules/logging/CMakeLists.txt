@@ -4,6 +4,7 @@ add_library(logging STATIC
     async_csv_writer.cpp
     log_types.cpp
     run_metadata.cpp
+    segment_logger.cpp
     telemetry_logger.cpp
     wall_logger.cpp
 )

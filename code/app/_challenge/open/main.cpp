@@ -12,6 +12,7 @@
 #include "open_challenge_actuator.hpp"
 #include "open_challenge_common.hpp"
 #include "run_metadata.hpp"
+#include "segment_logger.hpp"
 #include "telemetry_logger.hpp"
 #include "track_map.hpp"
 #include "wall_logger.hpp"
@@ -126,6 +127,7 @@ int main(int argc, char **argv) {
 	}
 	logging::TelemetryLogger telemetry_log(run_directory);
 	logging::WallLogger wall_log(run_directory);
+	logging::SegmentLogger segment_log(run_directory);
 	std::optional<logging::EventLogger> event_log;
 	std::cout << "Logging to " << run_directory << '\n';
 
@@ -357,6 +359,7 @@ int main(int argc, char **argv) {
 				state, result, processed.obstacles.size(), output, odometry));
 		wall_log.record(
 			processed.walls, state.mode, map_pose, scan.timestamp_us);
+		segment_log.record(processed, state.mode);
 
 		if (direction_only_complete) {
 			std::cout << "============================================================\n";
@@ -442,31 +445,36 @@ int main(int argc, char **argv) {
 	const bool corners_ok = logging::dump_corners(run_directory, track_map);
 	const bool telemetry_ok = telemetry_log.flush();
 	const bool walls_ok = wall_log.flush();
+	const bool segments_ok = segment_log.flush();
 	const bool events_ok = event_log.has_value() ? event_log->flush() : true;
 	const std::size_t telemetry_dropped_rows =
 		telemetry_log.dropped_row_count();
 	const std::size_t walls_dropped_rows = wall_log.dropped_row_count();
+	const std::size_t segments_dropped_rows = segment_log.dropped_row_count();
 	const std::size_t events_dropped_rows =
 		event_log.has_value() ? event_log->dropped_row_count() : 0;
 	logging::JsonObject logging_summary;
 	logging_summary
 		.add_unsigned("telemetry_dropped_rows", telemetry_dropped_rows)
 		.add_unsigned("walls_dropped_rows", walls_dropped_rows)
+		.add_unsigned("segments_dropped_rows", segments_dropped_rows)
 		.add_unsigned("events_dropped_rows", events_dropped_rows);
 	run_metadata.add_object("logging", logging_summary);
 	const bool metadata_ok =
 		logging::write_run_metadata(run_directory, run_metadata);
-	if (!corners_ok || !telemetry_ok || !walls_ok || !events_ok ||
-		!metadata_ok) {
+	if (!corners_ok || !telemetry_ok || !walls_ok || !segments_ok ||
+		!events_ok || !metadata_ok) {
 		std::cerr << "Logging write failure; run data may be incomplete\n";
 	}
 	std::cout << "Logging dropped rows: telemetry=" << telemetry_dropped_rows
 			  << " walls=" << walls_dropped_rows
+			  << " segments=" << segments_dropped_rows
 			  << " events=" << events_dropped_rows << '\n';
 	if (telemetry_dropped_rows > 0 || walls_dropped_rows > 0 ||
-		events_dropped_rows > 0) {
+		segments_dropped_rows > 0 || events_dropped_rows > 0) {
 		std::cerr << "Logging queue overflow: telemetry="
 				  << telemetry_dropped_rows << " walls=" << walls_dropped_rows
+				  << " segments=" << segments_dropped_rows
 				  << " events=" << events_dropped_rows << '\n';
 	}
 	if (!stopped_safely) {

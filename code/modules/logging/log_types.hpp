@@ -211,13 +211,29 @@ struct WallRow {
 	float wall_angle_rad{0.0f};
 };
 
+struct SegmentRow {
+	std::uint64_t timestamp_us{0};
+	std::uint64_t row_index{0};
+	const char *mode{"UNKNOWN"};
+	std::size_t segment_index{0};
+	float start_x_m{0.0f};
+	float start_y_m{0.0f};
+	float end_x_m{0.0f};
+	float end_y_m{0.0f};
+	float angle_rad{0.0f};
+	float length_m{0.0f};
+	const char *role{"NONE"};
+};
+
 const char *telemetry_csv_header();
 const char *corners_csv_header();
 const char *walls_csv_header();
+const char *segments_csv_header();
 
 std::string to_csv_row(const TelemetryRow &row);
 std::string to_csv_row(const CornerRow &row);
 std::string to_csv_row(const WallRow &row);
+std::string to_csv_row(const SegmentRow &row);
 
 const char *navigation_mode_name(navigation::NavigationMode mode);
 

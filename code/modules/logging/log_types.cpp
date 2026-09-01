@@ -64,6 +64,11 @@ const char *walls_csv_header() {
 		   "segment_end_y_m,wall_angle_rad";
 }
 
+const char *segments_csv_header() {
+	return "timestamp_us,row_index,mode,segment_index,start_x_m,start_y_m,"
+		   "end_x_m,end_y_m,angle_rad,length_m,role";
+}
+
 std::string to_csv_row(const TelemetryRow &row) {
 	std::ostringstream stream;
 	stream.setf(std::ios::fixed);
@@ -154,6 +159,17 @@ std::string to_csv_row(const WallRow &row) {
 		   << row.segment_start_x_m << ',' << row.segment_start_y_m << ','
 		   << row.segment_end_x_m << ',' << row.segment_end_y_m << ','
 		   << row.wall_angle_rad;
+	return stream.str();
+}
+
+std::string to_csv_row(const SegmentRow &row) {
+	std::ostringstream stream;
+	stream.setf(std::ios::fixed);
+	stream.precision(6);
+	stream << row.timestamp_us << ',' << row.row_index << ',' << row.mode << ','
+		   << row.segment_index << ',' << row.start_x_m << ',' << row.start_y_m
+		   << ',' << row.end_x_m << ',' << row.end_y_m << ',' << row.angle_rad
+		   << ',' << row.length_m << ',' << row.role;
 	return stream.str();
 }
 
