@@ -115,7 +115,14 @@ ProcessedLidarData LidarProcessor::process(
 
 bool LidarProcessor::is_valid_point(const LidarPoint &point) const {
 	if (point.quality < 10) return false;
-	if (point.distance_m < 0.015f) return false;
+	if (!std::isfinite(point.distance_m) ||
+		!std::isfinite(point.angle_deg) || point.distance_m < 0.015f) {
+		return false;
+	}
+
+	// Long returns are valid sensor readings, but are not useful for the small
+	// WRO geometry and make accidental line fits much more likely.
+	if (point.distance_m > 3.0f) return false;
 
 	// const bool front_region =
 	// 	point.angle_deg >= 75.0f && point.angle_deg <= 285.0f;
@@ -379,6 +386,11 @@ std::optional<LineSegment> LidarProcessor::fit_line_segment(
 		sxx += dx * dx;
 		syy += dy * dy;
 		sxy += dx * dy;
+	}
+
+	// A nearly coincident cluster has no reliable orientation.
+	if (std::max(sxx, syy) < 1e-8f) {
+		return std::nullopt;
 	}
 
 	LineSegment result;
@@ -833,8 +845,13 @@ std::optional<LineSegment> LidarProcessor::find_parking_wall(
 			continue;
 		}
 
-		// Prefer longer candidate
-		if (segment.length() > best_wall->length()) {
+		// Prefer a long, clean segment.  Length alone lets a noisy, accidental
+		// reflector beat a shorter but much better line fit.
+		const float candidate_score = segment.length() /
+			(1.0f + 8.0f * std::max(0.0f, segment.rms_error_m));
+		const float best_score = best_wall->length() /
+			(1.0f + 8.0f * std::max(0.0f, best_wall->rms_error_m));
+		if (candidate_score > best_score) {
 			best_wall = segment;
 		}
 	}

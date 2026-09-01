@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <csignal>
 #include <cstdint>
 #include <iostream>
@@ -18,9 +19,9 @@ namespace {
 
 std::atomic_bool stop_requested{false};
 
-constexpr float SEARCH_LAUNCH_BOOST_SPEED_MPS = 0.25f;
-constexpr float SEARCH_LAUNCH_RELEASE_SPEED_MPS = 0.08f;
-constexpr std::uint64_t SEARCH_LAUNCH_MAX_DURATION_US = 2'000'000;
+constexpr std::uint16_t SEARCH_LAUNCH_BOOST_RPM = 1500;
+constexpr float SEARCH_LAUNCH_TIME_LIMIT_S = 0.7f;
+constexpr float SEARCH_LAUNCH_RELEASE_SPEED_MPS = 0.18f;
 
 void request_stop(int) {
 	stop_requested.store(true);
@@ -54,6 +55,9 @@ int main(int argc, char **argv) {
 	navigation::TrackMap track_map;
 	open_challenge::ActuatorConfig actuator_config;
 	open_challenge::ActuatorOutput actuators(actuator_config);
+	const std::uint64_t search_launch_time_limit_us =
+		static_cast<std::uint64_t>(
+			std::max(0.0f, SEARCH_LAUNCH_TIME_LIMIT_S) * 1'000'000.0f);
 
 	std::cout
 		<< "Open Challenge main2: LAP 1 LEARN, LAPS 2-3 REPLAY, SPI ACTIVE\n"
@@ -122,6 +126,10 @@ int main(int argc, char **argv) {
 	float follow_outer_distance_m = 0.0f;
 	float follow_inner_distance_m = 0.0f;
 	float follow_error_m = 0.0f;
+	bool turn_inner_distance_valid = false;
+	float turn_inner_distance_m = 0.0f;
+	float turn_inner_forward_m = 0.0f;
+	float turn_trigger_distance_m = 0.0f;
 	std::uint64_t search_launch_start_timestamp_us = 0;
 	bool search_launch_boost_complete = false;
 	bool search_launch_boost_active = false;
@@ -184,15 +192,21 @@ int main(int argc, char **argv) {
 		auto result = navigation.update(
 			processed, heading_rad, speed_mps, replay_hint, map_pose);
 		const auto &state = navigation.state();
+		std::optional<std::int16_t> wheel_rpm_override;
 		if (!search_launch_boost_complete) {
+			const bool front_requires_slowdown =
+				processed.walls.front.has_value() &&
+				processed.walls.front->perpendicular_distance() <
+					navigation_config.search_front_slowdown_distance_m;
 			const std::uint64_t launch_elapsed_us =
 				scan.timestamp_us >= search_launch_start_timestamp_us
 				? scan.timestamp_us - search_launch_start_timestamp_us
-				: SEARCH_LAUNCH_MAX_DURATION_US;
+				: search_launch_time_limit_us;
 			const bool release_boost =
 				state.mode != navigation::NavigationMode::SEARCH_DIRECTION ||
+				front_requires_slowdown ||
 				speed_mps >= SEARCH_LAUNCH_RELEASE_SPEED_MPS ||
-				launch_elapsed_us >= SEARCH_LAUNCH_MAX_DURATION_US;
+				launch_elapsed_us >= search_launch_time_limit_us;
 			if (release_boost) {
 				search_launch_boost_complete = true;
 				if (search_launch_boost_active) {
@@ -200,12 +214,12 @@ int main(int argc, char **argv) {
 							  << " m/s\n";
 				}
 			} else {
-				result.command.target_speed_mps =
-					std::max(result.command.target_speed_mps,
-						SEARCH_LAUNCH_BOOST_SPEED_MPS);
+				wheel_rpm_override =
+					static_cast<std::int16_t>(SEARCH_LAUNCH_BOOST_RPM);
 				if (!search_launch_boost_active) {
-					std::cout << "Search launch boost active: target "
-							  << SEARCH_LAUNCH_BOOST_SPEED_MPS << " m/s\n";
+					std::cout << "Search launch boost active: "
+							  << SEARCH_LAUNCH_BOOST_RPM << " RPM, limit "
+							  << SEARCH_LAUNCH_TIME_LIMIT_S << " s\n";
 				}
 				search_launch_boost_active = true;
 			}
@@ -213,12 +227,23 @@ int main(int argc, char **argv) {
 		if (state.mode == navigation::NavigationMode::NORMAL ||
 			(previous_mode != navigation::NavigationMode::TURNING &&
 				state.mode == navigation::NavigationMode::TURNING)) {
+			if (result.debug.effective_turn_trigger_m > 0.0f) {
+				turn_trigger_distance_m =
+					result.debug.effective_turn_trigger_m;
+			}
 			if (result.debug.wall_corner_confirmed) {
 				turn_source = "INNER_CORNER";
+				turn_inner_distance_valid = true;
+				turn_inner_forward_m = result.debug.wall_corner_forward_m;
+				turn_inner_distance_m = std::hypot(
+					result.debug.wall_corner_forward_m,
+					result.debug.wall_corner_lateral_m);
 			} else if (result.debug.front_wall_fallback_active) {
 				turn_source = "FRONT_FALLBACK";
+				turn_inner_distance_valid = false;
 			} else {
 				turn_source = "LEGACY_FRONT";
+				turn_inner_distance_valid = false;
 			}
 		}
 		if (state.mode == navigation::NavigationMode::NORMAL) {
@@ -291,13 +316,14 @@ int main(int argc, char **argv) {
 			if (track_map.ready_for_replay() && state.lap == 1) {
 				std::cout << "[MAP] REPLAY READY for laps 2-3\n";
 			}
+			turn_inner_distance_valid = false;
 		}
 
 		const bool finished =
 			state.mode == navigation::NavigationMode::FINISHED;
 		if (finished || direction_only_complete) {
 			actuators.emergency_stop();
-		} else if (!actuators.apply(result.command)) {
+		} else if (!actuators.apply(result.command, wheel_rpm_override)) {
 			std::cerr << "SPI actuator command failed; emergency stop\n";
 			break;
 		}
@@ -311,6 +337,7 @@ int main(int argc, char **argv) {
 			processed.walls, state.mode, map_pose, scan.timestamp_us);
 
 		if (direction_only_complete) {
+			std::cout << "============================================================\n";
 			open_challenge::print_command(result, state, heading_rad, speed_mps,
 				telemetry.wheel_rpm, telemetry.servo_pulse_us);
 			std::cout << "[TURN] source=" << turn_source << '\n';
@@ -321,6 +348,7 @@ int main(int argc, char **argv) {
 		}
 
 		if (finished) {
+			std::cout << "============================================================\n";
 			open_challenge::print_command(result, state, heading_rad, speed_mps,
 				telemetry.wheel_rpm, telemetry.servo_pulse_us);
 			std::cout << "[TURN] source=" << turn_source << '\n';
@@ -330,16 +358,46 @@ int main(int argc, char **argv) {
 
 		if (last_log_timestamp_us == 0 ||
 			scan.timestamp_us - last_log_timestamp_us >= 250000) {
+			std::cout << "============================================================\n";
 			open_challenge::print_command(result, state, heading_rad, speed_mps,
 				telemetry.wheel_rpm, telemetry.servo_pulse_us);
+			const bool current_inner_visible =
+				result.debug.wall_corner_candidate_valid ||
+				result.debug.wall_corner_confirmed;
+			const float current_inner_distance_m = std::hypot(
+				result.debug.wall_corner_forward_m,
+				result.debug.wall_corner_lateral_m);
+			const float displayed_inner_forward_m = current_inner_visible
+				? result.debug.wall_corner_forward_m
+				: turn_inner_forward_m;
+			const float displayed_inner_distance_m = current_inner_visible
+				? current_inner_distance_m
+				: turn_inner_distance_m;
+			const bool displayed_inner_valid =
+				current_inner_visible || turn_inner_distance_valid;
+			const float displayed_trigger_m =
+				result.debug.effective_turn_trigger_m > 0.0f
+				? result.debug.effective_turn_trigger_m
+				: turn_trigger_distance_m;
 			std::cout << "[TURN] source=" << turn_source << " corner_forward="
-					  << result.debug.wall_corner_forward_m << "m"
-					  << " trigger=" << result.debug.effective_turn_trigger_m
+					  << displayed_inner_forward_m << "m"
+					  << " trigger=" << displayed_trigger_m
 					  << "m\n";
 			std::cout << "[FOLLOW] source=" << follow_source
 					  << " outer=" << follow_outer_distance_m << "m"
 					  << " inner=" << follow_inner_distance_m << "m"
 					  << " error=" << follow_error_m << "m\n";
+			if (displayed_inner_valid) {
+				std::cout << "[INNER] "
+						  << (current_inner_visible ? "VISIBLE" : "TURN_ENTRY")
+						  << " distance=" << displayed_inner_distance_m << "m"
+						  << " forward=" << displayed_inner_forward_m << "m"
+						  << " confirmed="
+						  << (result.debug.wall_corner_confirmed ? "YES" : "NO")
+						  << '\n';
+			} else {
+				std::cout << "[INNER] NOT_FOUND\n";
+			}
 			if (replay_hint.has_value()) {
 				std::cout << "[MAP] next=" << replay_hint->corner_index
 						  << " distance=" << replay_hint->distance_to_entry_m

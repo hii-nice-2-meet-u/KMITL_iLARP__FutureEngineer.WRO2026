@@ -19,7 +19,11 @@ struct NavigationConfig {
 	control::StanleyConfig stanley{};
 
 	// Center robot while direction is unknown.
-	float search_center_kp{0.8f};
+	float search_center_kp{1.5f};
+	bool search_preserve_initial_offset{false};
+	float search_front_slowdown_distance_m{0.70f};
+	float search_front_minimum_distance_m{0.20f};
+	float search_minimum_speed_mps{0.06f};
 
 	// ---------------------------------------------------------
 	// Corner
@@ -144,6 +148,8 @@ struct NavigationConfig {
 	float lap3_speed_factor{1.30f};
 	float replay_approach_factor_weight{0.50f};
 	float maximum_replay_speed_mps{0.70f};
+	float replay_turn_gate_distance_m{0.40f};
+	float replay_front_safety_override_distance_m{0.25f};
 
 	// Briefly hold the last OTOS heading when the outer wall disappears.
 	// Longer losses fall back to lost_wall_speed_mps with zero steering.
@@ -216,7 +222,7 @@ class NavigationController {
 
 	bool should_start_turn(const lidar::ProcessedLidarData &lidar_data,
 		float speed_mps, const std::optional<MapPose> &map_pose,
-		NavigationDebug &debug);
+		const std::optional<ReplayHint> &replay_hint, NavigationDebug &debug);
 
 	void update_wall_corner_landmark(
 		const lidar::ProcessedLidarData &lidar_data,
@@ -261,7 +267,7 @@ class NavigationController {
 
 	static float smoothstep(float value);
 
-	float calculate_search_steering(const lidar::ResolvedWalls &walls) const;
+	float calculate_search_steering(const lidar::ResolvedWalls &walls);
 
 	float clamp_steering(float steering_rad) const;
 
@@ -295,6 +301,8 @@ class NavigationController {
 	int wall_corner_missed_frames_{0};
 	bool wall_corner_confirmed_{false};
 	bool replay_speed_active_{false};
+	float search_initial_center_error_m_{0.0f};
+	bool search_initial_center_error_valid_{false};
 
 	float last_valid_wall_heading_rad_{0.0f};
 	float lost_wall_timer_s_{0.0f};

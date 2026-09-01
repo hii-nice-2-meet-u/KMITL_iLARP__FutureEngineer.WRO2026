@@ -96,6 +96,8 @@ void NavigationController::reset(float heading_rad) {
 	turn_trigger_frames_ = 0;
 	reset_wall_corner_tracker();
 	replay_speed_active_ = false;
+	search_initial_center_error_m_ = 0.0f;
+	search_initial_center_error_valid_ = false;
 	last_valid_wall_heading_rad_ = heading_rad;
 	lost_wall_timer_s_ = 0.0f;
 	has_last_valid_wall_heading_ = false;
@@ -118,6 +120,28 @@ NavigationCommand NavigationController::update_search_direction(
 	NavigationCommand command;
 
 	command.target_speed_mps = config_.search_speed_mps;
+	if (lidar_data.walls.front.has_value()) {
+		const float front_distance_m =
+			lidar_data.walls.front->perpendicular_distance();
+		const float slowdown_distance_m = std::max(
+			config_.search_front_minimum_distance_m,
+			config_.search_front_slowdown_distance_m);
+		const float minimum_distance_m = std::min(
+			config_.search_front_minimum_distance_m, slowdown_distance_m);
+		if (std::isfinite(front_distance_m) &&
+			front_distance_m < slowdown_distance_m) {
+			const float distance_weight = std::clamp(
+				(front_distance_m - minimum_distance_m) /
+					std::max(0.01f, slowdown_distance_m - minimum_distance_m),
+				0.0f, 1.0f);
+			const float minimum_speed_mps = std::clamp(
+				config_.search_minimum_speed_mps, 0.0f,
+				std::max(0.0f, config_.search_speed_mps));
+			command.target_speed_mps = minimum_speed_mps +
+				(std::max(0.0f, config_.search_speed_mps) - minimum_speed_mps) *
+					distance_weight;
+		}
+	}
 
 	command.steering_rad = calculate_search_steering(lidar_data.walls);
 
@@ -155,6 +179,11 @@ NavigationCommand NavigationController::update_normal(
 	NavigationCommand command;
 	replay_speed_active_ = config_.enable_replay_speed_factors &&
 		state_.lap >= 1 && replay_hint.has_value();
+	if (replay_hint.has_value()) {
+		debug.map_preview_valid = true;
+		debug.map_distance_to_corner_m = replay_hint->distance_to_entry_m;
+		debug.map_confidence = replay_hint->confidence;
+	}
 
 	const TrackWalls track_walls = resolve_track_walls(lidar_data.walls);
 
@@ -177,7 +206,8 @@ NavigationCommand NavigationController::update_normal(
 	// Start turn
 	// ---------------------------------------------------------
 
-	if (should_start_turn(lidar_data, speed_mps, map_pose, debug)) {
+	if (should_start_turn(
+			lidar_data, speed_mps, map_pose, replay_hint, debug)) {
 
 		start_turn(heading_rad);
 
@@ -786,7 +816,8 @@ void NavigationController::reset_wall_corner_tracker() {
 
 bool NavigationController::should_start_turn(
 	const lidar::ProcessedLidarData &lidar_data, float speed_mps,
-	const std::optional<MapPose> &map_pose, NavigationDebug &debug) {
+	const std::optional<MapPose> &map_pose,
+	const std::optional<ReplayHint> &replay_hint, NavigationDebug &debug) {
 
 	if (!state_.direction.has_value()) {
 		turn_trigger_frames_ = 0;
@@ -821,6 +852,20 @@ bool NavigationController::should_start_turn(
 		trigger_condition = lidar_data.walls.front.has_value() &&
 			lidar_data.walls.front->perpendicular_distance() <=
 				debug.effective_turn_trigger_m;
+	}
+
+	if (state_.lap >= 1 && replay_hint.has_value() &&
+		replay_hint->distance_to_entry_m >
+			std::max(0.0f, config_.replay_turn_gate_distance_m)) {
+		const bool safety_override = lidar_data.walls.front.has_value() &&
+			lidar_data.walls.front->perpendicular_distance() <=
+				std::max(
+					0.0f, config_.replay_front_safety_override_distance_m);
+		if (!safety_override) {
+			trigger_condition = false;
+			debug.wall_corner_trigger_active = false;
+			debug.front_wall_fallback_active = false;
+		}
 	}
 
 	if (trigger_condition) {
@@ -1123,7 +1168,7 @@ float NavigationController::smoothstep(float value) {
 // SEARCH CENTERING
 
 float NavigationController::calculate_search_steering(
-	const lidar::ResolvedWalls &walls) const {
+	const lidar::ResolvedWalls &walls) {
 
 	if (!walls.left.has_value() || !walls.right.has_value()) {
 
@@ -1139,7 +1184,15 @@ float NavigationController::calculate_search_steering(
 	// right - left > 0
 	// steer RIGHT (+)
 
-	const float center_error = right_distance - left_distance;
+	const float measured_center_error = right_distance - left_distance;
+	if (config_.search_preserve_initial_offset &&
+		!search_initial_center_error_valid_) {
+		search_initial_center_error_m_ = measured_center_error;
+		search_initial_center_error_valid_ = true;
+	}
+	const float center_error = config_.search_preserve_initial_offset
+		? measured_center_error - search_initial_center_error_m_
+		: measured_center_error;
 
 	return clamp_steering(config_.search_center_kp * center_error);
 }

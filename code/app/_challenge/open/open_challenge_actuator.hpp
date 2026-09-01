@@ -76,7 +76,8 @@ class ActuatorOutput {
 		return true;
 	}
 
-	bool apply(const navigation::NavigationCommand &command) {
+	bool apply(const navigation::NavigationCommand &command,
+		std::optional<std::int16_t> wheel_rpm_override = std::nullopt) {
 		if (!initialized_ || !telemetry_.armed) {
 			return false;
 		}
@@ -85,7 +86,9 @@ class ActuatorOutput {
 			to_servo_pulse_us(command.steering_rad);
 		const std::uint16_t servo_pulse_us =
 			limit_servo_pulse_step(target_servo_pulse_us);
-		const std::int16_t wheel_rpm = to_wheel_rpm(command.target_speed_mps);
+		const std::int16_t wheel_rpm = wheel_rpm_override.has_value()
+			? clamp_wheel_rpm(*wheel_rpm_override)
+			: to_wheel_rpm(command.target_speed_mps);
 
 		if (!bus_.set_servo_pulse_us(servo_pulse_us)) {
 			emergency_stop();
@@ -151,6 +154,14 @@ class ActuatorOutput {
 				std::numeric_limits<std::int16_t>::max()));
 		return static_cast<std::int16_t>(
 			std::lround(std::clamp(rpm, -maximum_rpm, maximum_rpm)));
+	}
+
+	std::int16_t clamp_wheel_rpm(std::int16_t rpm) const {
+		const std::int32_t maximum_rpm = std::clamp<std::int32_t>(
+			config_.maximum_wheel_rpm, 1,
+			std::numeric_limits<std::int16_t>::max());
+		return static_cast<std::int16_t>(
+			std::clamp<std::int32_t>(rpm, -maximum_rpm, maximum_rpm));
 	}
 
 	std::uint16_t to_servo_pulse_us(float steering_rad) const {
