@@ -8,6 +8,7 @@
 #include <optional>
 
 #include "navigation_state.hpp"
+#include "run_metadata.hpp"
 #include "spi_master.hpp"
 
 namespace open_challenge {
@@ -32,6 +33,23 @@ struct ActuatorTelemetry {
 	std::uint16_t servo_pulse_us{1475};
 	bool armed{false};
 };
+
+inline logging::JsonObject actuator_config_json(const ActuatorConfig &config) {
+	logging::JsonObject object;
+	object.add_unsigned("spi_chip_select", config.spi_chip_select)
+		.add_unsigned("spi_speed_hz", config.spi_speed_hz)
+		.add_number("wheel_diameter_m", config.wheel_diameter_m)
+		.add_unsigned("maximum_wheel_rpm", config.maximum_wheel_rpm)
+		.add_unsigned("servo_min_pulse_us", config.servo_min_pulse_us)
+		.add_unsigned("servo_center_pulse_us", config.servo_center_pulse_us)
+		.add_unsigned("servo_max_pulse_us", config.servo_max_pulse_us)
+		.add_unsigned("maximum_servo_step_us", config.maximum_servo_step_us)
+		.add_number(
+			"steering_to_servo_sign", config.steering_to_servo_sign)
+		.add_number("maximum_steering_command_deg",
+			config.maximum_steering_command_deg);
+	return object;
+}
 
 class ActuatorOutput {
   public:

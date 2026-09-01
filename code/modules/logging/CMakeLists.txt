@@ -3,6 +3,7 @@ find_package(Threads REQUIRED)
 add_library(logging STATIC
     async_csv_writer.cpp
     log_types.cpp
+    run_metadata.cpp
     telemetry_logger.cpp
     wall_logger.cpp
 )

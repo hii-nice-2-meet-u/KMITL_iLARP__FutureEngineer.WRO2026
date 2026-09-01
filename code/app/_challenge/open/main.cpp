@@ -11,6 +11,7 @@
 
 #include "open_challenge_actuator.hpp"
 #include "open_challenge_common.hpp"
+#include "run_metadata.hpp"
 #include "telemetry_logger.hpp"
 #include "track_map.hpp"
 #include "wall_logger.hpp"
@@ -110,7 +111,19 @@ int main(int argc, char **argv) {
 		std::cerr << "Battery voltage read failed\n";
 	}
 
+	const open_challenge::OtosScalars otos_scalars =
+		open_challenge::read_otos_scalars(otos);
 	const std::string run_directory = logging::make_run_directory();
+	logging::JsonObject run_metadata = logging::make_run_metadata(argv[0],
+		navigation_config, otos_scalars.linear, otos_scalars.angular);
+	run_metadata.add_object("actuator_config",
+		open_challenge::actuator_config_json(actuator_config));
+	if (!logging::write_run_metadata(run_directory, run_metadata)) {
+		std::cerr << "Cannot write run_meta.json; refusing unattributed run\n";
+		actuators.close();
+		lidar.stop();
+		return 1;
+	}
 	logging::TelemetryLogger telemetry_log(run_directory);
 	logging::WallLogger wall_log(run_directory);
 	std::optional<logging::EventLogger> event_log;

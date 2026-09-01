@@ -38,6 +38,23 @@ inline bool calibrate_otos(otos::OTOS &otos_device) {
 	return true;
 }
 
+struct OtosScalars {
+	std::optional<float> linear;
+	std::optional<float> angular;
+};
+
+inline OtosScalars read_otos_scalars(otos::OTOS &otos_device) {
+	OtosScalars scalars;
+	float value = 0.0f;
+	if (otos_device.getLinearScalar(value) == ksfTkErrOk) {
+		scalars.linear = value;
+	}
+	if (otos_device.getAngularScalar(value) == ksfTkErrOk) {
+		scalars.angular = value;
+	}
+	return scalars;
+}
+
 inline navigation::NavigationConfig make_navigation_config() {
 	navigation::NavigationConfig config;
 

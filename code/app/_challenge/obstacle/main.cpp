@@ -13,9 +13,11 @@
 #include "camera_module.hpp"
 #include "camera_processor.hpp"
 #include "obstacle_controller.hpp"
+#include "obstacle_metadata.hpp"
 #include "open_challenge_actuator.hpp"
 #include "open_challenge_common.hpp"
 #include "perception.hpp"
+#include "run_metadata.hpp"
 #include "telemetry_logger.hpp"
 #include "track_map.hpp"
 #include "wall_logger.hpp"
@@ -35,7 +37,7 @@ void request_stop(int) {
 
 } // namespace
 
-int main() {
+int main(int, char **argv) {
 	std::signal(SIGINT, request_stop);
 	std::signal(SIGTERM, request_stop);
 
@@ -132,7 +134,26 @@ int main() {
 		std::cerr << "Battery voltage read failed\n";
 	}
 
+	const open_challenge::OtosScalars otos_scalars =
+		open_challenge::read_otos_scalars(otos);
 	const std::string run_directory = logging::make_run_directory();
+	logging::JsonObject run_metadata = logging::make_run_metadata(argv[0],
+		navigation_config, otos_scalars.linear, otos_scalars.angular);
+	run_metadata
+		.add_object("actuator_config",
+			open_challenge::actuator_config_json(actuator_config))
+		.add_object(
+			"perception_config",
+			obstacle_challenge::perception_config_json(perception_config))
+		.add_object("obstacle_config",
+			obstacle_challenge::obstacle_config_json(obstacle_config));
+	if (!logging::write_run_metadata(run_directory, run_metadata)) {
+		std::cerr << "Cannot write run_meta.json; refusing unattributed run\n";
+		actuators.close();
+		lidar.stop();
+		camera.stop();
+		return 1;
+	}
 	logging::TelemetryLogger telemetry_log(run_directory);
 	logging::WallLogger wall_log(run_directory);
 	std::optional<logging::EventLogger> event_log;
