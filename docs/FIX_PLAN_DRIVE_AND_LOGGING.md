@@ -4,8 +4,8 @@
 > จัดลำดับตามการพึ่งพากัน ไม่ใช่ตามความรุนแรง เพราะบางอย่างต้องแก้ก่อนถึงจะทดสอบอย่างอื่นได้
 >
 > **สิ่งที่ต้องอ่านก่อนเริ่ม:** `docs/audit/01`, `02`, `03` ทั้งสามไฟล์
-> **สิ่งที่ต้องทำก่อนเริ่ม:** ตอบคำถามในหัวข้อ §2 (Blocking decisions) ให้ครบ — มี 6 ข้อที่ agent
-> ตัดสินใจเองไม่ได้ ต้องให้คนในทีมตอบ
+> **สถานะ:** คำถามใน §2 ตอบครบทั้ง 6 ข้อแล้ว ทุก task ปลดล็อก
+> ความคืบหน้าอยู่ใน `docs/audit/FIX_LOG.md`
 >
 > ลำดับหลักคือ: **แก้บั๊กหน่วย/เรขาคณิตของโค้ง → เพิ่ม logging ให้มองเห็น → แก้สถาปัตยกรรมการหลบกล่อง → เก็บกวาด**
 > เหตุผลที่การหลบกล่อง (งานที่ทีมกำลังทำอยู่) ไม่ได้อยู่ลำดับแรก อธิบายไว้ใน §3
@@ -32,8 +32,9 @@ the audit wins — re-read it before improvising.
    record the old value.
 6. **All six decisions in §2 are answered — every task is unblocked.** Use the
    exact values given there; do not substitute your own judgement for a decision
-   the team has already made. The only thing still pending is a hardware
-   measurement (§2, "Still open"), which gates nothing in this plan.
+   the team has already made. The only work still pending outside the code is
+   the two frame-convention checks in `docs/audit/HARDWARE_CHECKS.md` (§4),
+   which gate F-07/F-08 only and no task in this plan.
 
 ---
 
