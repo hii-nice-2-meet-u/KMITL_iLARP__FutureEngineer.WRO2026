@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <csignal>
@@ -16,6 +17,10 @@
 namespace {
 
 std::atomic_bool stop_requested{false};
+
+constexpr float SEARCH_LAUNCH_BOOST_SPEED_MPS = 0.25f;
+constexpr float SEARCH_LAUNCH_RELEASE_SPEED_MPS = 0.08f;
+constexpr std::uint64_t SEARCH_LAUNCH_MAX_DURATION_US = 2'000'000;
 
 void request_stop(int) {
 	stop_requested.store(true);
@@ -39,8 +44,9 @@ int main(int argc, char **argv) {
 	std::signal(SIGINT, request_stop);
 	std::signal(SIGTERM, request_stop);
 
-	const navigation::NavigationConfig navigation_config =
+	navigation::NavigationConfig navigation_config =
 		open_challenge::make_navigation_config();
+	navigation_config.enable_replay_speed_factors = true;
 	lidar::LidarModule lidar("/dev/ttyAMA0", 1000000);
 	lidar::LidarProcessor lidar_processor;
 	otos::OTOS otos;
@@ -57,15 +63,15 @@ int main(int argc, char **argv) {
 		<< " RPM, servo pulse=" << actuator_config.servo_min_pulse_us << "-"
 		<< actuator_config.servo_max_pulse_us
 		<< "us, max servo step=" << actuator_config.maximum_servo_step_us
-		<< "us, center="
-		<< (actuator_config.servo_min_pulse_us +
-			   actuator_config.servo_max_pulse_us) /
-			2
-		<< "us, wheel steering=+/-" << actuator_config.maximum_wheel_angle_deg
-		<< "deg, run=" << (direction_only ? "DIRECTION ONLY" : "FULL") << '\n';
+		<< "us, center=" << actuator_config.servo_center_pulse_us
+		<< "us, run=" << (direction_only ? "DIRECTION ONLY" : "FULL") << '\n';
 
-	if (!lidar.initialize() || !lidar.start()) {
+	if (!lidar.initialize()) {
 		std::cerr << "LiDAR initialization failed\n";
+		return 1;
+	}
+	if (!lidar.start()) {
+		std::cerr << "LiDAR start failed\n";
 		return 1;
 	}
 
@@ -111,6 +117,14 @@ int main(int argc, char **argv) {
 	navigation::NavigationMode previous_mode =
 		navigation::NavigationMode::SEARCH_DIRECTION;
 	bool previous_heading_hold_active = false;
+	std::string turn_source = "SEARCH";
+	std::string follow_source = "SEARCH";
+	float follow_outer_distance_m = 0.0f;
+	float follow_inner_distance_m = 0.0f;
+	float follow_error_m = 0.0f;
+	std::uint64_t search_launch_start_timestamp_us = 0;
+	bool search_launch_boost_complete = false;
+	bool search_launch_boost_active = false;
 
 	while (!stop_requested.load()) {
 		TimedLidarData scan;
@@ -145,6 +159,7 @@ int main(int argc, char **argv) {
 		if (!navigation_initialized) {
 			navigation.reset(heading_rad);
 			previous_mode = navigation.state().mode;
+			search_launch_start_timestamp_us = scan.timestamp_us;
 			if (!actuators.arm()) {
 				std::cerr << "Motor arm failed; M1/M2 stop attempted\n";
 				break;
@@ -166,9 +181,60 @@ int main(int argc, char **argv) {
 			heading_rad - navigation.state().target_heading_rad);
 		const auto processed = open_challenge::process_scan(
 			lidar_processor, scan, wall_correction_rad);
-		const auto result =
-			navigation.update(processed, heading_rad, speed_mps, replay_hint);
+		auto result = navigation.update(
+			processed, heading_rad, speed_mps, replay_hint, map_pose);
 		const auto &state = navigation.state();
+		if (!search_launch_boost_complete) {
+			const std::uint64_t launch_elapsed_us =
+				scan.timestamp_us >= search_launch_start_timestamp_us
+				? scan.timestamp_us - search_launch_start_timestamp_us
+				: SEARCH_LAUNCH_MAX_DURATION_US;
+			const bool release_boost =
+				state.mode != navigation::NavigationMode::SEARCH_DIRECTION ||
+				speed_mps >= SEARCH_LAUNCH_RELEASE_SPEED_MPS ||
+				launch_elapsed_us >= SEARCH_LAUNCH_MAX_DURATION_US;
+			if (release_boost) {
+				search_launch_boost_complete = true;
+				if (search_launch_boost_active) {
+					std::cout << "Search launch boost released at " << speed_mps
+							  << " m/s\n";
+				}
+			} else {
+				result.command.target_speed_mps =
+					std::max(result.command.target_speed_mps,
+						SEARCH_LAUNCH_BOOST_SPEED_MPS);
+				if (!search_launch_boost_active) {
+					std::cout << "Search launch boost active: target "
+							  << SEARCH_LAUNCH_BOOST_SPEED_MPS << " m/s\n";
+				}
+				search_launch_boost_active = true;
+			}
+		}
+		if (state.mode == navigation::NavigationMode::NORMAL ||
+			(previous_mode != navigation::NavigationMode::TURNING &&
+				state.mode == navigation::NavigationMode::TURNING)) {
+			if (result.debug.wall_corner_confirmed) {
+				turn_source = "INNER_CORNER";
+			} else if (result.debug.front_wall_fallback_active) {
+				turn_source = "FRONT_FALLBACK";
+			} else {
+				turn_source = "LEGACY_FRONT";
+			}
+		}
+		if (state.mode == navigation::NavigationMode::NORMAL) {
+			follow_outer_distance_m = result.debug.outer_distance_m;
+			follow_inner_distance_m = result.debug.inner_distance_m;
+			follow_error_m = result.debug.distance_error_m;
+			if (result.debug.corridor_center_active) {
+				follow_source = "CENTER";
+			} else if (result.debug.outer_wall_valid) {
+				follow_source = "OUTER";
+			} else if (result.debug.heading_hold_active) {
+				follow_source = "HEADING_HOLD";
+			} else {
+				follow_source = "LOST";
+			}
+		}
 
 		if (state.mode != previous_mode) {
 			event_log->event(scan.timestamp_us, state.lap, state.corner_index,
@@ -247,6 +313,7 @@ int main(int argc, char **argv) {
 		if (direction_only_complete) {
 			open_challenge::print_command(result, state, heading_rad, speed_mps,
 				telemetry.wheel_rpm, telemetry.servo_pulse_us);
+			std::cout << "[TURN] source=" << turn_source << '\n';
 			std::cout << "Direction detected: "
 					  << open_challenge::direction_name(state.direction)
 					  << "; M1/M2 RPM=0\n";
@@ -256,6 +323,7 @@ int main(int argc, char **argv) {
 		if (finished) {
 			open_challenge::print_command(result, state, heading_rad, speed_mps,
 				telemetry.wheel_rpm, telemetry.servo_pulse_us);
+			std::cout << "[TURN] source=" << turn_source << '\n';
 			std::cout << "Open Challenge complete: 3 laps; M1/M2 RPM=0\n";
 			break;
 		}
@@ -264,6 +332,14 @@ int main(int argc, char **argv) {
 			scan.timestamp_us - last_log_timestamp_us >= 250000) {
 			open_challenge::print_command(result, state, heading_rad, speed_mps,
 				telemetry.wheel_rpm, telemetry.servo_pulse_us);
+			std::cout << "[TURN] source=" << turn_source << " corner_forward="
+					  << result.debug.wall_corner_forward_m << "m"
+					  << " trigger=" << result.debug.effective_turn_trigger_m
+					  << "m\n";
+			std::cout << "[FOLLOW] source=" << follow_source
+					  << " outer=" << follow_outer_distance_m << "m"
+					  << " inner=" << follow_inner_distance_m << "m"
+					  << " error=" << follow_error_m << "m\n";
 			if (replay_hint.has_value()) {
 				std::cout << "[MAP] next=" << replay_hint->corner_index
 						  << " distance=" << replay_hint->distance_to_entry_m
@@ -279,7 +355,9 @@ int main(int argc, char **argv) {
 		previous_mode = state.mode;
 	}
 
-	const bool stopped_safely = actuators.close();
+	const bool emergency_stop_ok = actuators.emergency_stop();
+	const auto final_battery_voltage = actuators.get_voltage();
+	const bool stopped_safely = actuators.close() && emergency_stop_ok;
 	lidar.stop();
 	const bool corners_ok = logging::dump_corners(run_directory, track_map);
 	const bool telemetry_ok = telemetry_log.flush();
@@ -297,6 +375,12 @@ int main(int argc, char **argv) {
 	if (!stopped_safely) {
 		std::cerr << "SAFE STOP FAILED; verify M1/M2 and servo manually\n";
 		return 1;
+	}
+	if (final_battery_voltage.has_value()) {
+		std::cout << "Battery voltage after run: " << *final_battery_voltage
+				  << " V\n";
+	} else {
+		std::cerr << "Battery voltage read after run failed\n";
 	}
 	std::cout << "Stopped safely; M1/M2 RPM=0, brake active, servo centered\n";
 	return 0;

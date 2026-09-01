@@ -1,21 +1,9 @@
-add_executable(open_challenge_main1
-    main1.cpp
+
+add_executable(open_challenge_main
+    main.cpp
 )
 
-target_link_libraries(open_challenge_main1 PRIVATE
-    lidar_module
-    lidar_processor
-    navigation
-    otos
-    spi_master
-    logging
-)
-
-add_executable(open_challenge_main2
-    main2.cpp
-)
-
-target_link_libraries(open_challenge_main2 PRIVATE
+target_link_libraries(open_challenge_main PRIVATE
     lidar_module
     lidar_processor
     navigation
@@ -25,7 +13,6 @@ target_link_libraries(open_challenge_main2 PRIVATE
 )
 
 install(TARGETS
-    open_challenge_main1
-    open_challenge_main2
-    DESTINATION app
+    open_challenge_main
+    DESTINATION challenge/open
 )

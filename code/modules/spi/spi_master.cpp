@@ -18,8 +18,6 @@ namespace {
 constexpr std::int16_t MIN_POWER_PERCENT = -100;
 constexpr std::int16_t MAX_POWER_PERCENT = 100;
 constexpr std::uint8_t MAX_SERVO_ANGLE_DEG = 180;
-constexpr std::uint16_t MIN_SERVO_PULSE_US = 1000;
-constexpr std::uint16_t MAX_SERVO_PULSE_US = 2100;
 constexpr auto RESPONSE_DELAY = std::chrono::milliseconds(2);
 
 } // namespace
@@ -91,10 +89,6 @@ bool SPI::set_motor_speed(Motor motor, std::int16_t rpm) {
 }
 
 bool SPI::set_servo_pulse_us(std::uint16_t pulse_us) {
-	if (pulse_us < MIN_SERVO_PULSE_US || pulse_us > MAX_SERVO_PULSE_US) {
-		std::cerr << "Servo pulse must be in range 1000-2100 us\n";
-		return false;
-	}
 	return transfer_command(Command::SERVO_PULSE, pulse_us);
 }
 

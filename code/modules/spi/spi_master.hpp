@@ -70,7 +70,7 @@ class SPI {
 	// Signed motor speed in RPM, encoded as signed 16-bit two's complement.
 	bool set_motor_speed(Motor motor, std::int16_t rpm);
 
-	// Positional servo pulse width: 1000-2100 microseconds.
+	// Raw unsigned 16-bit positional servo pulse command.
 	bool set_servo_pulse_us(std::uint16_t pulse_us);
 
 	// Positional servo command: 0-180 degrees, center = 90 degrees.

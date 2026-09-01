@@ -21,6 +21,7 @@ struct NavigationCommand {
 struct NavigationDebug {
 	// Wall following
 	float outer_distance_m{0.0f};
+	float inner_distance_m{0.0f};
 	float distance_error_m{0.0f};
 
 	float wall_angle_rad{0.0f};
@@ -43,12 +44,25 @@ struct NavigationDebug {
 	float map_distance_to_corner_m{0.0f};
 	float map_confidence{0.0f};
 	float lost_wall_time_s{0.0f};
+	float wall_corner_forward_m{0.0f};
+	float wall_corner_lateral_m{0.0f};
+	float wall_corner_stability_error_m{0.0f};
+	float replay_speed_factor{1.0f};
+	float active_normal_speed_mps{0.0f};
+	float active_approach_speed_mps{0.0f};
+	int wall_corner_confirm_frames{0};
 
 	bool outer_wall_valid{false};
+	bool inner_wall_valid{false};
+	bool corridor_center_active{false};
 	bool front_wall_valid{false};
 	bool heading_hold_active{false};
 	bool map_preview_valid{false};
 	bool map_approach_active{false};
+	bool wall_corner_candidate_valid{false};
+	bool wall_corner_confirmed{false};
+	bool wall_corner_trigger_active{false};
+	bool front_wall_fallback_active{false};
 };
 
 struct NavigationState {

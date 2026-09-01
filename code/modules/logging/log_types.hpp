@@ -12,7 +12,7 @@ namespace logging {
 
 struct OutputSnapshot {
 	std::int16_t wheel_rpm{0};
-	std::uint16_t servo_pulse_us{1550};
+	std::uint16_t servo_pulse_us{1475};
 };
 
 struct TelemetryRow {
@@ -29,10 +29,13 @@ struct TelemetryRow {
 
 	// Wall-following measurements and controller errors.
 	float outer_distance_m{0.0f};
+	float inner_distance_m{0.0f};
 	float distance_error_m{0.0f};
 	float wall_angle_rad{0.0f};
 	float angle_error_rad{0.0f};
 	bool outer_wall_valid{false};
+	bool inner_wall_valid{false};
+	bool corridor_center_active{false};
 	bool front_wall_valid{false};
 
 	// Heading fallback and corner tracking state.
@@ -47,9 +50,20 @@ struct TelemetryRow {
 	float raw_steering_rad{0.0f};
 	float raw_target_speed_mps{0.0f};
 	float corner_speed_mps{0.0f};
+	float replay_speed_factor{1.0f};
+	float active_normal_speed_mps{0.0f};
+	float active_approach_speed_mps{0.0f};
 	float target_acceleration_mps2{0.0f};
 	float effective_turn_trigger_m{0.0f};
 	float update_dt_s{0.0f};
+	float wall_corner_forward_m{0.0f};
+	float wall_corner_lateral_m{0.0f};
+	float wall_corner_stability_error_m{0.0f};
+	int wall_corner_confirm_frames{0};
+	bool wall_corner_candidate_valid{false};
+	bool wall_corner_confirmed{false};
+	bool wall_corner_trigger_active{false};
+	bool front_wall_fallback_active{false};
 
 	// Learned-map preview state used by replay navigation.
 	bool map_preview_valid{false};

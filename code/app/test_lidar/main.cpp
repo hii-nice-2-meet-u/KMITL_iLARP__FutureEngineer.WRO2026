@@ -22,7 +22,7 @@ namespace {
 constexpr int WORLD_VIEW_WIDTH = 920;
 constexpr int PANEL_WIDTH = 500;
 constexpr int MAP_WIDTH = WORLD_VIEW_WIDTH + PANEL_WIDTH;
-constexpr int MAP_HEIGHT = 900;
+constexpr int MAP_HEIGHT = 980;
 
 constexpr float SCALE_PX_PER_M = 300.0f;
 
@@ -235,7 +235,8 @@ void draw_wall(cv::Mat &map, const std::optional<lidar::LineSegment> &wall,
 	const cv::Point2f center = (wall->start + wall->end) * 0.5f;
 
 	cv::putText(map,
-		name + " " + fixed(wall->perpendicular_distance(), 2) + "m",
+		name + " DIST " + fixed(wall->perpendicular_distance(), 2) +
+			"m LEN " + fixed(wall->length(), 2) + "m",
 		world_to_pixel(center) + cv::Point(8, -8), cv::FONT_HERSHEY_SIMPLEX,
 		0.45, color, 1, cv::LINE_AA);
 }
@@ -366,6 +367,34 @@ void draw_heading_arrow(cv::Mat &map, float relative_heading_rad,
 	cv::arrowedLine(map, origin, end, color, 2, cv::LINE_AA, 0, 0.18);
 	cv::putText(map, label, end + cv::Point(6, -6), cv::FONT_HERSHEY_SIMPLEX,
 		0.42, color, 1, cv::LINE_AA);
+}
+
+void draw_wall_corner(cv::Mat &map, const navigation::NavigationDebug &debug,
+	float lidar_lateral_offset_m, float lidar_forward_offset_m) {
+	if (!debug.wall_corner_candidate_valid && !debug.wall_corner_confirmed) {
+		return;
+	}
+
+	const cv::Point2f lidar_point{
+		debug.wall_corner_lateral_m - lidar_lateral_offset_m,
+		debug.wall_corner_forward_m - lidar_forward_offset_m};
+	const cv::Point pixel = world_to_pixel(lidar_point);
+	if (!is_inside_world_view(pixel)) {
+		return;
+	}
+
+	const cv::Scalar color = debug.wall_corner_confirmed
+		? cv::Scalar(70, 255, 70)
+		: cv::Scalar(0, 255, 255);
+	cv::circle(map, pixel, 10, color, 2, cv::LINE_AA);
+	cv::line(map, pixel + cv::Point(-14, 0), pixel + cv::Point(14, 0), color, 2,
+		cv::LINE_AA);
+	cv::line(map, pixel + cv::Point(0, -14), pixel + cv::Point(0, 14), color, 2,
+		cv::LINE_AA);
+	cv::putText(map,
+		debug.wall_corner_confirmed ? "WALL CORNER CONF" : "WALL CORNER CAND",
+		pixel + cv::Point(14, -12), cv::FONT_HERSHEY_SIMPLEX, 0.43f, color, 1,
+		cv::LINE_AA);
 }
 
 std::optional<float> get_front_distance(
@@ -552,6 +581,10 @@ void draw_debug_panel(cv::Mat &map, const lidar::ProcessedLidarData &processed,
 			" m/s   CORNER CAP " + fixed(nav.debug.corner_speed_mps, 2) +
 			" m/s",
 		white);
+	text("LAP FACTOR x" + fixed(nav.debug.replay_speed_factor, 2) +
+			"   NORMAL " + fixed(nav.debug.active_normal_speed_mps, 2) +
+			"   APPROACH " + fixed(nav.debug.active_approach_speed_mps, 2),
+		cyan);
 	text("SPEED PID ACCEL " + fixed(nav.command.target_acceleration_mps2, 2) +
 			" m/s2",
 		cyan);
@@ -561,9 +594,15 @@ void draw_debug_panel(cv::Mat &map, const lidar::ProcessedLidarData &processed,
 	text("OUTER " + expected_outer_string(state.direction) + "   VALID " +
 			(nav.debug.outer_wall_valid ? "YES" : "NO"),
 		nav.debug.outer_wall_valid ? magenta : cv::Scalar(60, 60, 255));
-	text("DIST " + fixed(nav.debug.outer_distance_m, 3) + " m   TARGET " +
-			fixed(target_outer_distance_m, 3) + " m",
+	text("FOLLOW " +
+			std::string(nav.debug.corridor_center_active ? "CENTER" :
+												 "OUTER FALLBACK"),
+		nav.debug.corridor_center_active ? green : dim);
+	text("OUTER " + fixed(nav.debug.outer_distance_m, 3) + " m   INNER " +
+			fixed(nav.debug.inner_distance_m, 3) + " m",
 		white);
+	text("OUTER FALLBACK TARGET " + fixed(target_outer_distance_m, 3) + " m",
+		dim);
 	text("CTE " + fixed(nav.debug.distance_error_m, 3) + " m  " +
 			cte_to_string(nav.debug.distance_error_m) + "   WALL ERR " +
 			fixed(nav.debug.angle_error_rad * RAD_TO_DEG, 1) + " deg",
@@ -574,6 +613,23 @@ void draw_debug_panel(cv::Mat &map, const lidar::ProcessedLidarData &processed,
 		nav.debug.front_wall_valid ? yellow : dim);
 	text("DYNAMIC TURN TRIGGER  " + fixed(effective_trigger_m, 3) + " m",
 		yellow);
+	text("WALL CORNER  CAND " +
+			(nav.debug.wall_corner_candidate_valid ? std::string("YES")
+												   : "NO") +
+			"   CONF " + (nav.debug.wall_corner_confirmed ? "YES" : "NO") +
+			"   FRAMES " + std::to_string(nav.debug.wall_corner_confirm_frames),
+		nav.debug.wall_corner_confirmed ? green : dim);
+	text("CORNER FWD " + fixed(nav.debug.wall_corner_forward_m, 3) +
+			" m   LAT " + fixed(nav.debug.wall_corner_lateral_m, 3) +
+			" m   ERR " + fixed(nav.debug.wall_corner_stability_error_m, 3) +
+			" m",
+		white);
+	text("TURN SOURCE  " +
+			(nav.debug.wall_corner_confirmed ? std::string("INNER WALL CORNER")
+					: nav.debug.front_wall_fallback_active
+					? std::string("FRONT WALL FALLBACK")
+					: std::string("LEGACY FRONT WALL")),
+		nav.debug.wall_corner_confirmed ? green : yellow);
 	text("OBSTACLES  " + std::to_string(processed.obstacles.size()),
 		processed.obstacles.empty() ? dim : orange);
 
@@ -598,6 +654,7 @@ int main() {
 	otos::OTOS otos;
 
 	navigation::NavigationConfig nav_config;
+	nav_config.enable_replay_speed_factors = true;
 
 	nav_config.target_outer_distance_m = 0.20f;
 
@@ -616,6 +673,11 @@ int main() {
 	nav_config.speed_pid.kd = 0.170f;
 
 	nav_config.turn_trigger_distance_m = 0.85f;
+	nav_config.use_wall_corner_trigger = true;
+	nav_config.front_wall_fallback_distance_m = 0.40f;
+	nav_config.lidar_lateral_offset_m = 0.0f;
+	nav_config.lidar_forward_offset_m = 0.0f;
+	nav_config.wall_corner_to_path_offset_m = 0.0f;
 
 	nav_config.turn_entry_blend_rad = 13.0f * PI / 180.0f;
 	nav_config.turn_exit_blend_rad = 26.0f * PI / 180.0f;
@@ -757,8 +819,8 @@ int main() {
 		const auto replay_hint =
 			track_map.replay_hint(map_pose, navigation.state().corner_index);
 
-		const auto nav_result =
-			navigation.update(processed, heading_rad, speed_mps, replay_hint);
+		const auto nav_result = navigation.update(
+			processed, heading_rad, speed_mps, replay_hint, map_pose);
 
 		const auto process_end = std::chrono::steady_clock::now();
 
@@ -858,6 +920,9 @@ int main() {
 		draw_obstacles(debug_map, processed);
 
 		draw_outer_wall(debug_map, processed, state.direction);
+		draw_wall_corner(debug_map, nav_result.debug,
+			nav_config.lidar_lateral_offset_m,
+			nav_config.lidar_forward_offset_m);
 
 		draw_robot(debug_map);
 

@@ -14,6 +14,7 @@ namespace navigation {
 struct NavigationConfig {
 
 	float target_outer_distance_m{0.30f};
+	bool follow_corridor_center{true};
 
 	control::StanleyConfig stanley{};
 
@@ -35,6 +36,45 @@ struct NavigationConfig {
 	float turn_preview_time_s{0.08f};
 
 	int turn_trigger_confirm_frames{2};
+
+	// Prefer a physical inner-wall endpoint over a field-width-dependent front
+	// wall threshold. The front wall remains a close-range safety fallback.
+	bool use_wall_corner_trigger{true};
+	float front_wall_fallback_distance_m{0.40f};
+
+	// LiDAR origin relative to rear-axle center in the robot frame.
+	// +right points right and +forward points toward the front of the robot.
+	float lidar_lateral_offset_m{0.0f};
+	float lidar_forward_offset_m{0.081875f};
+
+	// Signed longitudinal displacement from the detected wall corner to the
+	// virtual intersection of the incoming and outgoing vehicle paths.
+	float wall_corner_to_path_offset_m{0.0f};
+
+	// Local LiDAR gates for rejecting endpoints behind the robot or too far away
+	// to be a useful corner observation.
+	float wall_corner_min_forward_m{0.08f};
+	float wall_corner_max_forward_m{1.50f};
+
+	// Reject short line-fit fragments before treating an endpoint as a corner.
+	float wall_corner_min_inner_length_m{0.20f};
+
+	// A new endpoint must remain within the stability gate in the OTOS world
+	// frame for the configured number of frames. Once confirmed, the wider
+	// association gate tolerates normal LiDAR endpoint noise.
+	float wall_corner_stability_tolerance_m{0.05f};
+	float wall_corner_association_distance_m{0.12f};
+	float wall_corner_filter_weight{0.25f};
+
+	// A collinear segment extending beyond the selected endpoint means the inner
+	// wall continues forward, so that endpoint is not the physical wall corner.
+	float wall_corner_collinear_angle_rad{
+		8.0f * 3.14159265358979323846f / 180.0f};
+	float wall_corner_collinear_offset_m{0.05f};
+	float wall_corner_continuation_gap_m{0.20f};
+
+	int wall_corner_confirm_frames{4};
+	int wall_corner_max_missed_frames{3};
 
 	// ---------------------------------------------------------
 	// Smooth geometric corner trajectory
@@ -96,6 +136,15 @@ struct NavigationConfig {
 
 	float lost_wall_speed_mps{0.25f};
 
+	// Main2 can enable these after its lap-one map becomes available. Straight
+	// speed gets the full factor, approach speed gets only the configured share,
+	// and turning speed remains independently limited.
+	bool enable_replay_speed_factors{false};
+	float lap2_speed_factor{1.20f};
+	float lap3_speed_factor{1.30f};
+	float replay_approach_factor_weight{0.50f};
+	float maximum_replay_speed_mps{0.70f};
+
 	// Briefly hold the last OTOS heading when the outer wall disappears.
 	// Longer losses fall back to lost_wall_speed_mps with zero steering.
 	float max_heading_hold_s{0.30f};
@@ -129,7 +178,8 @@ class NavigationController {
 
 	NavigationResult update(const lidar::ProcessedLidarData &lidar_data,
 		float heading_rad, float speed_mps,
-		const std::optional<ReplayHint> &replay_hint = std::nullopt);
+		const std::optional<ReplayHint> &replay_hint = std::nullopt,
+		const std::optional<MapPose> &map_pose = std::nullopt);
 
 	void reset(float heading_rad = 0.0f);
 
@@ -147,7 +197,8 @@ class NavigationController {
 
 	NavigationCommand update_normal(const lidar::ProcessedLidarData &lidar_data,
 		float heading_rad, float speed_mps, float dt_s,
-		const std::optional<ReplayHint> &replay_hint, NavigationDebug &debug);
+		const std::optional<ReplayHint> &replay_hint,
+		const std::optional<MapPose> &map_pose, NavigationDebug &debug);
 
 	NavigationCommand update_turning(
 		float heading_rad, float speed_mps, float dt_s, NavigationDebug &debug);
@@ -156,12 +207,33 @@ class NavigationController {
 
 	float calculate_cross_track_error(
 		const lidar::LineSegment &outer_wall) const;
+	float calculate_center_cross_track_error(
+		const lidar::LineSegment &inner_wall,
+		const lidar::LineSegment &outer_wall) const;
 
 	float calculate_wall_heading_error(
 		const lidar::LineSegment &outer_wall) const;
 
-	bool should_start_turn(const lidar::ResolvedWalls &walls, float speed_mps,
+	bool should_start_turn(const lidar::ProcessedLidarData &lidar_data,
+		float speed_mps, const std::optional<MapPose> &map_pose,
 		NavigationDebug &debug);
+
+	void update_wall_corner_landmark(
+		const lidar::ProcessedLidarData &lidar_data,
+		const std::optional<MapPose> &map_pose, NavigationDebug &debug);
+
+	std::optional<cv::Point2f> find_inner_wall_corner_candidate(
+		const lidar::ProcessedLidarData &lidar_data) const;
+
+	bool has_forward_wall_continuation(const lidar::LineSegment &inner_wall,
+		const cv::Point2f &forward_endpoint,
+		const std::vector<lidar::LineSegment> &segments) const;
+
+	void reset_wall_corner_tracker();
+
+	float calculate_geometric_turn_trigger_m(float speed_mps) const;
+
+	float calculate_front_wall_fallback_trigger_m(float speed_mps) const;
 
 	void start_turn(float heading_rad);
 
@@ -170,6 +242,12 @@ class NavigationController {
 	bool is_turn_complete(float heading_error_rad);
 
 	float calculate_corner_speed_mps() const;
+
+	float calculate_replay_speed_factor() const;
+
+	float calculate_active_normal_speed_mps() const;
+
+	float calculate_active_approach_speed_mps() const;
 
 	float calculate_effective_turn_trigger_m(float speed_mps) const;
 
@@ -210,6 +288,13 @@ class NavigationController {
 	float turn_entry_steering_rad_{0.0f};
 
 	int turn_trigger_frames_{0};
+
+	std::optional<cv::Point2f> wall_corner_anchor_world_;
+	std::optional<cv::Point2f> wall_corner_filtered_world_;
+	int wall_corner_stable_frames_{0};
+	int wall_corner_missed_frames_{0};
+	bool wall_corner_confirmed_{false};
+	bool replay_speed_active_{false};
 
 	float last_valid_wall_heading_rad_{0.0f};
 	float lost_wall_timer_s_{0.0f};

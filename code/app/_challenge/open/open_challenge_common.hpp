@@ -40,11 +40,16 @@ inline bool calibrate_otos(otos::OTOS &otos_device) {
 
 inline navigation::NavigationConfig make_navigation_config() {
 	navigation::NavigationConfig config;
-	config.target_outer_distance_m = 0.18f;
-	config.search_speed_mps = 0.234f;
-	config.normal_speed_mps = 0.5f;
-	config.approach_speed_mps = 0.45f;
-	config.turning_speed_mps = 0.45f;
+	config.follow_corridor_center = true;
+	config.target_outer_distance_m = 0.23f;
+	config.search_speed_mps = 0.19f;
+	config.normal_speed_mps = 0.35f;
+	config.approach_speed_mps = 0.65f;
+	config.turning_speed_mps = 0.65f;
+	config.lap2_speed_factor = 1.10f;
+	config.lap3_speed_factor = 1.10f;
+	config.replay_approach_factor_weight = 0.50f;
+	config.maximum_replay_speed_mps = 0.70f;
 
 	config.max_acceleration_mps2 = 5.0f;
 	config.max_deceleration_mps2 = 5.0f;
@@ -52,19 +57,26 @@ inline navigation::NavigationConfig make_navigation_config() {
 	config.approach_distance_m = 0.80f;
 	config.turn_trigger_distance_m = 0.65f;
 	config.turn_rearm_distance_m = 0.80f;
-	config.turn_preview_time_s = 0.20f;
-	config.corner_radius_m = 0.30f;
+	config.turn_preview_time_s = 0.1f;
+	config.use_wall_corner_trigger = true;
+	config.front_wall_fallback_distance_m = 0.56f;
+	config.wall_corner_to_path_offset_m = 0.03f;
+	config.corner_radius_m = 0.21f;
 
-	config.turn_entry_blend_rad = 9.0f * PI / 180.0f;
-	config.max_steering_rate_rad_s = 6.0f;
+	config.turn_entry_blend_rad = 8.5f * PI / 180.0f;
+	config.max_steering_rate_rad_s = 4.0f;
+	config.turn_exit_blend_rad = 38.0f * PI / 180.0f;
 
-	config.stanley.k = 1.0f;
-	config.stanley.max_steering_rad = 45.0f * PI / 180.0f;
-	config.stanley.heading_pid.kp = 2.30f;
-	config.stanley.heading_pid.ki = 0.12f;
-	config.stanley.heading_pid.kd = 0.065f;
+	config.heading_tolerance_rad = 8.0f * PI / 180.0f;
+	config.heading_confirm_frames = 3;
 
-	config.turn_heading_pid.kp = 0.90f;
+	config.stanley.k = 0.95f;
+	config.stanley.max_steering_rad = 20.0f * PI / 180.0f;
+	config.stanley.heading_pid.kp = 1.20f;
+	config.stanley.heading_pid.ki = 0.08f;
+	config.stanley.heading_pid.kd = 0.045f;
+
+	config.turn_heading_pid.kp = 0.70f;
 	config.turn_heading_pid.ki = 0.08f;
 	config.turn_heading_pid.kd = 0.035f;
 
@@ -73,6 +85,9 @@ inline navigation::NavigationConfig make_navigation_config() {
 	config.speed_pid.kd = 0.04f;
 
 	config.total_turns = 12;
+	config.wall_corner_confirm_frames = 3;
+	config.wall_corner_stability_tolerance_m = 0.03f;
+	config.wall_corner_min_inner_length_m = 0.35f;
 	return config;
 }
 

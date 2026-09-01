@@ -19,12 +19,19 @@ void write_optional(
 const char *telemetry_csv_header() {
 	return "timestamp_us,lap,corner_index,mode,"
 		   "pos_x_m,pos_y_m,heading_rad,measured_speed_mps,"
-		   "outer_distance_m,distance_error_m,wall_angle_rad,angle_error_rad,"
-		   "outer_wall_valid,front_wall_valid,heading_hold_active,"
+		   "outer_distance_m,inner_distance_m,distance_error_m,wall_angle_rad,"
+		   "angle_error_rad,outer_wall_valid,inner_wall_valid,"
+		   "corridor_center_active,front_wall_valid,heading_hold_active,"
 		   "heading_tracking_error_rad,lost_wall_time_s,heading_error_rad,"
 		   "turn_progress,turn_feedforward_rad,raw_steering_rad,"
-		   "raw_target_speed_mps,corner_speed_mps,target_acceleration_mps2,"
-		   "effective_turn_trigger_m,update_dt_s,map_preview_valid,"
+		   "raw_target_speed_mps,corner_speed_mps,replay_speed_factor,"
+		   "active_normal_speed_mps,active_approach_speed_mps,"
+		   "target_acceleration_mps2,"
+		   "effective_turn_trigger_m,update_dt_s,wall_corner_forward_m,"
+		   "wall_corner_lateral_m,wall_corner_stability_error_m,"
+		   "wall_corner_confirm_frames,wall_corner_candidate_valid,"
+		   "wall_corner_confirmed,wall_corner_trigger_active,"
+		   "front_wall_fallback_active,map_preview_valid,"
 		   "map_approach_active,map_distance_to_corner_m,map_confidence,"
 		   "target_speed_mps,steering_rad,obstacle_count,"
 		   "wheel_rpm,servo_pulse_us";
@@ -50,17 +57,29 @@ std::string to_csv_row(const TelemetryRow &row) {
 	stream << row.timestamp_us << ',' << row.lap << ',' << row.corner_index
 		   << ',' << row.mode << ',' << row.pos_x_m << ',' << row.pos_y_m << ','
 		   << row.heading_rad << ',' << row.measured_speed_mps << ','
-		   << row.outer_distance_m << ',' << row.distance_error_m << ','
+		   << row.outer_distance_m << ',' << row.inner_distance_m << ','
+		   << row.distance_error_m << ','
 		   << row.wall_angle_rad << ',' << row.angle_error_rad << ','
 		   << (row.outer_wall_valid ? 1 : 0) << ','
+		   << (row.inner_wall_valid ? 1 : 0) << ','
+		   << (row.corridor_center_active ? 1 : 0) << ','
 		   << (row.front_wall_valid ? 1 : 0) << ','
 		   << (row.heading_hold_active ? 1 : 0) << ','
 		   << row.heading_tracking_error_rad << ',' << row.lost_wall_time_s
 		   << ',' << row.heading_error_rad << ',' << row.turn_progress << ','
 		   << row.turn_feedforward_rad << ',' << row.raw_steering_rad << ','
 		   << row.raw_target_speed_mps << ',' << row.corner_speed_mps << ','
+		   << row.replay_speed_factor << ',' << row.active_normal_speed_mps << ','
+		   << row.active_approach_speed_mps << ','
 		   << row.target_acceleration_mps2 << ','
 		   << row.effective_turn_trigger_m << ',' << row.update_dt_s << ','
+		   << row.wall_corner_forward_m << ',' << row.wall_corner_lateral_m
+		   << ',' << row.wall_corner_stability_error_m << ','
+		   << row.wall_corner_confirm_frames << ','
+		   << (row.wall_corner_candidate_valid ? 1 : 0) << ','
+		   << (row.wall_corner_confirmed ? 1 : 0) << ','
+		   << (row.wall_corner_trigger_active ? 1 : 0) << ','
+		   << (row.front_wall_fallback_active ? 1 : 0) << ','
 		   << (row.map_preview_valid ? 1 : 0) << ','
 		   << (row.map_approach_active ? 1 : 0) << ','
 		   << row.map_distance_to_corner_m << ',' << row.map_confidence << ','
@@ -128,10 +147,13 @@ TelemetryRow make_telemetry_row(std::uint64_t timestamp_us,
 	row.heading_rad = pose.heading_rad;
 	row.measured_speed_mps = measured_speed_mps;
 	row.outer_distance_m = result.debug.outer_distance_m;
+	row.inner_distance_m = result.debug.inner_distance_m;
 	row.distance_error_m = result.debug.distance_error_m;
 	row.wall_angle_rad = result.debug.wall_angle_rad;
 	row.angle_error_rad = result.debug.angle_error_rad;
 	row.outer_wall_valid = result.debug.outer_wall_valid;
+	row.inner_wall_valid = result.debug.inner_wall_valid;
+	row.corridor_center_active = result.debug.corridor_center_active;
 	row.front_wall_valid = result.debug.front_wall_valid;
 	row.heading_hold_active = result.debug.heading_hold_active;
 	row.heading_tracking_error_rad = result.debug.heading_tracking_error_rad;
@@ -142,9 +164,21 @@ TelemetryRow make_telemetry_row(std::uint64_t timestamp_us,
 	row.raw_steering_rad = result.debug.raw_steering_rad;
 	row.raw_target_speed_mps = result.debug.raw_target_speed_mps;
 	row.corner_speed_mps = result.debug.corner_speed_mps;
+	row.replay_speed_factor = result.debug.replay_speed_factor;
+	row.active_normal_speed_mps = result.debug.active_normal_speed_mps;
+	row.active_approach_speed_mps = result.debug.active_approach_speed_mps;
 	row.target_acceleration_mps2 = result.debug.target_acceleration_mps2;
 	row.effective_turn_trigger_m = result.debug.effective_turn_trigger_m;
 	row.update_dt_s = result.debug.update_dt_s;
+	row.wall_corner_forward_m = result.debug.wall_corner_forward_m;
+	row.wall_corner_lateral_m = result.debug.wall_corner_lateral_m;
+	row.wall_corner_stability_error_m =
+		result.debug.wall_corner_stability_error_m;
+	row.wall_corner_confirm_frames = result.debug.wall_corner_confirm_frames;
+	row.wall_corner_candidate_valid = result.debug.wall_corner_candidate_valid;
+	row.wall_corner_confirmed = result.debug.wall_corner_confirmed;
+	row.wall_corner_trigger_active = result.debug.wall_corner_trigger_active;
+	row.front_wall_fallback_active = result.debug.front_wall_fallback_active;
 	row.map_preview_valid = result.debug.map_preview_valid;
 	row.map_approach_active = result.debug.map_approach_active;
 	row.map_distance_to_corner_m = result.debug.map_distance_to_corner_m;

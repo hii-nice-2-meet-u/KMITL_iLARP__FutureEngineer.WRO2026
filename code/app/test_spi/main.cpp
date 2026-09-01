@@ -22,7 +22,7 @@ void print_usage(const char *program) {
 		<< "  --echo VALUE              Echo-test a 16-bit value\n"
 		<< "  --servo-angle DEG        Set servo 0..180 degrees\n"
 		<< "  --raw B0 B1 B2          Raw full-duplex 3-byte transfer\n"
-		<< "  --servo-pulse US          Set servo pulse 1000..2100 us\n\n"
+		<< "  --servo-pulse US          Send raw uint16 servo pulse\n\n"
 		<< "Direct motor tests without enable/disable commands:\n"
 		<< "  --motor-speed RPM        M1=+RPM, M2=-RPM (0..1500)\n"
 		<< "  --duration-ms MS          Motor hold / raw delay (default 500)\n"
@@ -102,8 +102,8 @@ int main(int argc, char **argv) {
 			echo_value = static_cast<std::uint16_t>(*value);
 		} else if (option == "--servo-angle" && *value >= 0 && *value <= 180) {
 			servo_angle = static_cast<std::uint16_t>(*value);
-		} else if (option == "--servo-pulse" && *value >= 1000 &&
-			*value <= 2100) {
+		} else if (option == "--servo-pulse" && *value >= 0 &&
+			*value <= 0xFFFF) {
 			servo_pulse = static_cast<std::uint16_t>(*value);
 		} else if (option == "--motor-speed" && *value >= 0 && *value <= 1500) {
 			motor_speed = static_cast<std::int16_t>(*value);

@@ -19,16 +19,17 @@ struct ActuatorConfig {
 	float wheel_diameter_m{0.053f};
 	std::uint16_t maximum_wheel_rpm{1500};
 
-	std::uint16_t servo_min_pulse_us{1000};
-	std::uint16_t servo_max_pulse_us{2100};
+	std::uint16_t servo_min_pulse_us{950};
+	std::uint16_t servo_center_pulse_us{1475};
+	std::uint16_t servo_max_pulse_us{2000};
 	std::uint16_t maximum_servo_step_us{500};
 	float steering_to_servo_sign{1.0f};
-	float maximum_wheel_angle_deg{45.0f};
+	float maximum_steering_command_deg{45.0f};
 };
 
 struct ActuatorTelemetry {
 	std::int16_t wheel_rpm{0};
-	std::uint16_t servo_pulse_us{1550};
+	std::uint16_t servo_pulse_us{1475};
 	bool armed{false};
 };
 
@@ -153,25 +154,31 @@ class ActuatorOutput {
 	}
 
 	std::uint16_t to_servo_pulse_us(float steering_rad) const {
-		const float maximum_wheel_angle_deg =
-			std::max(0.1f, std::abs(config_.maximum_wheel_angle_deg));
+		const float maximum_steering_command_deg =
+			std::max(0.1f, std::abs(config_.maximum_steering_command_deg));
 		const float steering_deg = std::clamp(std::isfinite(steering_rad)
 				? steering_rad * 180.0f / 3.14159265358979323846f
 				: 0.0f,
-			-maximum_wheel_angle_deg, maximum_wheel_angle_deg);
-		const float pulse_angle_deg =
+			-maximum_steering_command_deg, maximum_steering_command_deg);
+		const float signed_command_deg =
 			std::clamp(config_.steering_to_servo_sign * steering_deg,
-				-maximum_wheel_angle_deg, maximum_wheel_angle_deg);
-		const float normalized = (pulse_angle_deg + maximum_wheel_angle_deg) /
-			(2.0f * maximum_wheel_angle_deg);
+				-maximum_steering_command_deg, maximum_steering_command_deg);
 		const float minimum_pulse_us = static_cast<float>(
 			std::min(config_.servo_min_pulse_us, config_.servo_max_pulse_us));
 		const float maximum_pulse_us = static_cast<float>(
 			std::max(config_.servo_min_pulse_us, config_.servo_max_pulse_us));
-		const float pulse_us = minimum_pulse_us +
-			normalized * (maximum_pulse_us - minimum_pulse_us);
+		const float center_pulse_us = std::clamp(
+			static_cast<float>(config_.servo_center_pulse_us), minimum_pulse_us,
+			maximum_pulse_us);
+		const float normalized_command =
+			signed_command_deg / maximum_steering_command_deg;
+		const float pulse_span_us = normalized_command >= 0.0f
+			? maximum_pulse_us - center_pulse_us
+			: center_pulse_us - minimum_pulse_us;
+		const float pulse_us =
+			center_pulse_us + normalized_command * pulse_span_us;
 		return static_cast<std::uint16_t>(
-			std::lround(std::clamp(pulse_us, 1000.0f, 2100.0f)));
+			std::lround(std::clamp(pulse_us, minimum_pulse_us, maximum_pulse_us)));
 	}
 
 	std::uint16_t limit_servo_pulse_step(std::uint16_t target_pulse_us) const {
