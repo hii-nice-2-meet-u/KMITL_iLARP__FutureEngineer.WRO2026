@@ -3,12 +3,6 @@
 > Autonomous mobile robot developed by **KMITL iLARP** for the
 > **World Robot Olympiad 2026 — Future Engineers** category.
 
-<p align="center">
-  <img src="v-photos/front.jpg" alt="KMITL iLARP autonomous mobile robot — front view" width="820" height="461" style="object-fit: cover; object-position: center;">
-</p>
-
-<p align="center"><strong>Sense. Decide. Move.</strong><br>Autonomous mobile robot for WRO Future Engineers 2026</p>
-
 ---
 
 ## **Team**
