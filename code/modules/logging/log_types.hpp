@@ -56,6 +56,19 @@ struct OdometrySample {
 	float accel_y_mps2{0.0f};
 };
 
+// Battery voltage, sampled at a low cadence rather than every tick:
+// read_voltage_v() is a blocking SPI round-trip (~2 ms) and must not run at
+// loop rate. The app holds the last successful reading between samples;
+// sample_age_us reports how old it is at the tick it is logged with, so a
+// stale hold is visible. valid is false until the first successful read, so a
+// zero voltage is never mistaken for a real 0 V (see the missing-value
+// convention above).
+struct BatterySample {
+	float voltage_v{0.0f};
+	std::uint64_t sample_age_us{0};
+	bool valid{false};
+};
+
 struct TelemetryRow {
 	// Monotonic per-run counter. AsyncCsvWriter drops the oldest row when its
 	// queue is full and leaves no marker, so a gap in this column is the only
@@ -80,6 +93,12 @@ struct TelemetryRow {
 	float otos_yaw_rate_rps{0.0f};
 	float otos_accel_x_mps2{0.0f};
 	float otos_accel_y_mps2{0.0f};
+
+	// Battery, held from a ~1 Hz sample; see BatterySample. Gate on
+	// battery_valid before reading battery_voltage_v.
+	float battery_voltage_v{0.0f};
+	std::uint64_t battery_sample_age_us{0};
+	bool battery_valid{false};
 
 	// Wall-following measurements and controller errors.
 	float outer_distance_m{0.0f};
@@ -242,6 +261,7 @@ TelemetryRow make_telemetry_row(std::uint64_t timestamp_us,
 	const navigation::NavigationState &state,
 	const navigation::NavigationResult &result, std::size_t obstacle_count,
 	const std::optional<OutputSnapshot> &output = std::nullopt,
-	const std::optional<OdometrySample> &odometry = std::nullopt);
+	const std::optional<OdometrySample> &odometry = std::nullopt,
+	const std::optional<BatterySample> &battery = std::nullopt);
 
 } // namespace logging

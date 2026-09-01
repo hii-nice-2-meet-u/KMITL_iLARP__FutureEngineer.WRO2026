@@ -21,6 +21,7 @@ const char *telemetry_csv_header() {
 		   "pos_x_m,pos_y_m,heading_rad,measured_speed_mps,"
 		   "pose_timestamp_us,otos_velocity_x_mps,otos_velocity_y_mps,"
 		   "otos_yaw_rate_rps,otos_accel_x_mps2,otos_accel_y_mps2,"
+		   "battery_voltage_v,battery_sample_age_us,battery_valid,"
 		   "outer_distance_m,inner_distance_m,distance_error_m,wall_angle_rad,"
 		   "angle_error_rad,outer_wall_valid,inner_wall_valid,"
 		   "corridor_center_active,wall_following_active,front_wall_valid,"
@@ -80,6 +81,8 @@ std::string to_csv_row(const TelemetryRow &row) {
 		   << row.pose_timestamp_us << ',' << row.otos_velocity_x_mps << ','
 		   << row.otos_velocity_y_mps << ',' << row.otos_yaw_rate_rps << ','
 		   << row.otos_accel_x_mps2 << ',' << row.otos_accel_y_mps2 << ','
+		   << row.battery_voltage_v << ',' << row.battery_sample_age_us << ','
+		   << (row.battery_valid ? 1 : 0) << ','
 		   << row.outer_distance_m << ',' << row.inner_distance_m << ','
 		   << row.distance_error_m << ','
 		   << row.wall_angle_rad << ',' << row.angle_error_rad << ','
@@ -192,7 +195,8 @@ TelemetryRow make_telemetry_row(std::uint64_t timestamp_us,
 	const navigation::NavigationState &state,
 	const navigation::NavigationResult &result, std::size_t obstacle_count,
 	const std::optional<OutputSnapshot> &output,
-	const std::optional<OdometrySample> &odometry) {
+	const std::optional<OdometrySample> &odometry,
+	const std::optional<BatterySample> &battery) {
 	TelemetryRow row;
 	row.timestamp_us = timestamp_us;
 	row.lap = state.lap;
@@ -270,6 +274,12 @@ TelemetryRow make_telemetry_row(std::uint64_t timestamp_us,
 		row.otos_yaw_rate_rps = odometry->yaw_rate_rps;
 		row.otos_accel_x_mps2 = odometry->accel_x_mps2;
 		row.otos_accel_y_mps2 = odometry->accel_y_mps2;
+	}
+
+	if (battery.has_value()) {
+		row.battery_voltage_v = battery->voltage_v;
+		row.battery_sample_age_us = battery->sample_age_us;
+		row.battery_valid = battery->valid;
 	}
 
 	return row;

@@ -133,6 +133,12 @@ int main(int argc, char **argv) {
 
 	bool navigation_initialized = false;
 	std::uint64_t last_log_timestamp_us = 0;
+	// Battery is read at ~1 Hz, not per tick: get_voltage() is a blocking SPI
+	// round-trip. The last good reading is held between samples so every row
+	// carries a voltage, with its age, rather than a gap.
+	constexpr std::uint64_t BATTERY_SAMPLE_INTERVAL_US = 1'000'000;
+	std::optional<float> last_battery_voltage_v;
+	std::uint64_t last_battery_sample_us = 0;
 	navigation::NavigationMode previous_mode =
 		navigation::NavigationMode::SEARCH_DIRECTION;
 	bool previous_heading_hold_active = false;
@@ -354,9 +360,25 @@ int main(int argc, char **argv) {
 		const auto &telemetry = actuators.telemetry();
 		const logging::OutputSnapshot output{
 			telemetry.wheel_rpm, telemetry.servo_pulse_us};
+		if (last_battery_sample_us == 0 ||
+			scan.timestamp_us - last_battery_sample_us >=
+				BATTERY_SAMPLE_INTERVAL_US) {
+			if (const auto voltage = actuators.get_voltage();
+				voltage.has_value()) {
+				last_battery_voltage_v = *voltage;
+				last_battery_sample_us = scan.timestamp_us;
+			}
+		}
+		logging::BatterySample battery;
+		if (last_battery_voltage_v.has_value()) {
+			battery.voltage_v = *last_battery_voltage_v;
+			battery.sample_age_us = scan.timestamp_us - last_battery_sample_us;
+			battery.valid = true;
+		}
 		telemetry_log.record(
 			logging::make_telemetry_row(scan.timestamp_us, map_pose, speed_mps,
-				state, result, processed.obstacles.size(), output, odometry));
+				state, result, processed.obstacles.size(), output, odometry,
+				battery));
 		wall_log.record(
 			processed.walls, state.mode, map_pose, scan.timestamp_us);
 		segment_log.record(processed, state.mode);

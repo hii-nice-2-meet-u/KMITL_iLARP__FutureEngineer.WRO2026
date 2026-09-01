@@ -162,6 +162,10 @@ int main(int, char **argv) {
 	std::cout << "Logging to " << run_directory << '\n';
 
 	bool initialized = false;
+	// Battery held from a ~1 Hz sample; get_voltage() is a blocking SPI call.
+	constexpr std::uint64_t BATTERY_SAMPLE_INTERVAL_US = 1'000'000;
+	std::optional<float> last_battery_voltage_v;
+	std::uint64_t last_battery_sample_us = 0;
 	std::uint64_t launch_start_us = 0;
 	bool launch_complete = false;
 	std::uint64_t last_console_us = 0;
@@ -361,9 +365,25 @@ int main(int, char **argv) {
 		const auto &actuator_telemetry = actuators.telemetry();
 		const logging::OutputSnapshot output{
 			actuator_telemetry.wheel_rpm, actuator_telemetry.servo_pulse_us};
+		if (last_battery_sample_us == 0 ||
+			scan.timestamp_us - last_battery_sample_us >=
+				BATTERY_SAMPLE_INTERVAL_US) {
+			if (const auto voltage = actuators.get_voltage();
+				voltage.has_value()) {
+				last_battery_voltage_v = *voltage;
+				last_battery_sample_us = scan.timestamp_us;
+			}
+		}
+		logging::BatterySample battery;
+		if (last_battery_voltage_v.has_value()) {
+			battery.voltage_v = *last_battery_voltage_v;
+			battery.sample_age_us = scan.timestamp_us - last_battery_sample_us;
+			battery.valid = true;
+		}
 		logging::TelemetryRow telemetry_row =
 			logging::make_telemetry_row(scan.timestamp_us, pose, speed_mps,
-				state, result, fused.obstacles.size(), output, odometry);
+				state, result, fused.obstacles.size(), output, odometry,
+				battery);
 		// Written every tick, including ticks where avoidance is inactive, so
 		// an activation can be read against the surrounding navigation state.
 		telemetry_row.obstacle_active = obstacle_status.active;
