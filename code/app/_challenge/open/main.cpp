@@ -366,8 +366,8 @@ int main(int argc, char **argv) {
 			break;
 		}
 		const auto &telemetry = actuators.telemetry();
-		const logging::OutputSnapshot output{
-			telemetry.wheel_rpm, telemetry.servo_pulse_us};
+		const logging::OutputSnapshot output{telemetry.wheel_rpm,
+			telemetry.servo_pulse_us, telemetry.commanded_servo_pulse_us};
 		if (last_battery_sample_us == 0 ||
 			scan.timestamp_us - last_battery_sample_us >=
 				BATTERY_SAMPLE_INTERVAL_US) {

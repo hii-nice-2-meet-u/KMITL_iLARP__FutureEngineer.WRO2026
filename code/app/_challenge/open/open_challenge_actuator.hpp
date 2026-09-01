@@ -30,7 +30,12 @@ struct ActuatorConfig {
 
 struct ActuatorTelemetry {
 	std::int16_t wheel_rpm{0};
+	// servo_pulse_us is the value actually sent, after limit_servo_pulse_step.
+	// commanded_servo_pulse_us is the value requested before that per-tick step
+	// clamp, so a reader can see when maximum_servo_step_us is clipping the
+	// steering command rather than inferring it from consecutive deltas.
 	std::uint16_t servo_pulse_us{1475};
+	std::uint16_t commanded_servo_pulse_us{1475};
 	bool armed{false};
 };
 
@@ -79,6 +84,7 @@ class ActuatorOutput {
 
 		telemetry_ = {};
 		telemetry_.servo_pulse_us = to_servo_pulse_us(0.0f);
+		telemetry_.commanded_servo_pulse_us = telemetry_.servo_pulse_us;
 		return true;
 	}
 
@@ -118,6 +124,7 @@ class ActuatorOutput {
 		}
 
 		telemetry_.servo_pulse_us = servo_pulse_us;
+		telemetry_.commanded_servo_pulse_us = target_servo_pulse_us;
 		telemetry_.wheel_rpm = wheel_rpm;
 		return true;
 	}
@@ -135,6 +142,7 @@ class ActuatorOutput {
 		telemetry_.wheel_rpm = 0;
 		if (servo_centered) {
 			telemetry_.servo_pulse_us = center_pulse_us;
+			telemetry_.commanded_servo_pulse_us = center_pulse_us;
 		}
 		telemetry_.armed = false;
 		return m1_zero && m2_zero && brake_ok && servo_centered;

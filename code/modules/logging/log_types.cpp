@@ -50,7 +50,7 @@ const char *telemetry_csv_header() {
 		   "lidar_valid_count,camera_valid_count,matched_count,"
 		   "frame_confirmed_count,camera_time_synchronized,"
 		   "target_speed_mps,steering_rad,obstacle_count,"
-		   "wheel_rpm,servo_pulse_us";
+		   "wheel_rpm,servo_pulse_us,commanded_servo_pulse_us";
 }
 
 const char *corners_csv_header() {
@@ -137,6 +137,8 @@ std::string to_csv_row(const TelemetryRow &row) {
 	write_optional(stream, row.wheel_rpm);
 	stream << ',';
 	write_optional(stream, row.servo_pulse_us);
+	stream << ',';
+	write_optional(stream, row.commanded_servo_pulse_us);
 	return stream.str();
 }
 
@@ -269,6 +271,7 @@ TelemetryRow make_telemetry_row(std::uint64_t timestamp_us,
 	if (output.has_value()) {
 		row.wheel_rpm = output->wheel_rpm;
 		row.servo_pulse_us = output->servo_pulse_us;
+		row.commanded_servo_pulse_us = output->commanded_servo_pulse_us;
 	}
 
 	if (odometry.has_value()) {

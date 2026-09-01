@@ -32,6 +32,9 @@ namespace logging {
 struct OutputSnapshot {
 	std::int16_t wheel_rpm{0};
 	std::uint16_t servo_pulse_us{1475};
+	// Pre-step-limit servo command; equals servo_pulse_us unless
+	// maximum_servo_step_us clipped this tick.
+	std::uint16_t commanded_servo_pulse_us{1475};
 };
 
 // Raw OTOS output, before the control path reduces it.
@@ -211,6 +214,7 @@ struct TelemetryRow {
 	// only applications and do not represent an MCU acknowledgement.
 	std::optional<std::int16_t> wheel_rpm;
 	std::optional<std::uint16_t> servo_pulse_us;
+	std::optional<std::uint16_t> commanded_servo_pulse_us;
 };
 
 struct CornerRow {
