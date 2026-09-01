@@ -102,8 +102,13 @@ struct NavigationConfig {
 	// the steering at corner entry.
 
 	// PID correction for the moving heading reference during a corner.
+	// The output limits must leave room under the steering clamp once the
+	// corner feed-forward atan2(wheelbase_m, corner_radius_m) is added, or the
+	// composite clamp binds first and this correction has no effect. At the
+	// configured geometry the feed-forward is 20 deg and the clamp is 38 deg,
+	// so +/-15 deg keeps the sum (35 deg) inside the clamp.
 	control::PIDConfig turn_heading_pid{
-		0.80f, 0.08f, 0.020f, -0.785398f, 0.785398f, -0.50f, 0.50f, 0.10f};
+		0.80f, 0.08f, 0.020f, -0.261799f, 0.261799f, -0.50f, 0.50f, 0.10f};
 
 	float heading_tolerance_rad{5.0f * 3.14159265358979323846f / 180.0f};
 
