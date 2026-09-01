@@ -21,6 +21,7 @@ add_subdirectory(modules/perception)
 add_subdirectory(modules/spi)
 add_subdirectory(modules/logging)
 add_subdirectory(control)
+add_subdirectory(tests)
 
 add_subdirectory(app/test_camera)
 add_subdirectory(app/test_lidar)

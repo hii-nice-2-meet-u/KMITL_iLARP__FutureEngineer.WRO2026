@@ -3,7 +3,6 @@
 /code/dist/*
 /code/.cross-build
 /code/.ccache-cross
-/code/tests/
 
 .clangd
 .clang-format
