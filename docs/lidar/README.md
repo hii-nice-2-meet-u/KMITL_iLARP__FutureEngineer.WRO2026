@@ -110,7 +110,11 @@ process(data, heading_error_rad = 0,
 
 ### 3.1 Point filtering & coordinate frame
 
-`is_valid_point()` drops points with `quality < 50` or `distance < 0.01 m`.
+`is_valid_point()` drops points with `quality < 10`, non-finite range/angle,
+`distance < 0.015 m`, or `distance > 3.0 m`. The decision lives in
+`classify_point()`, which also tags each rejection as quality- or range-based so
+the per-scan `lidar_points_rejected_quality`/`_range` telemetry counts a mis-set
+threshold without persisting the raw scan.
 
 `polar2cartesian()` uses the robot frame **+X = right, +Y = forward**:
 
