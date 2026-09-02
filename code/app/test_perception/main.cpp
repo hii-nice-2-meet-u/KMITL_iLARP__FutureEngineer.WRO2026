@@ -269,7 +269,7 @@ int main() {
 		}
 
 		const auto processed_lidar = lidar_processor.process(
-			scan, 0.0f, 4, 0.035f, 0.12f, 5.0f, 0.04f, 0.10f);
+			scan, 4, 0.035f, 0.12f, 5.0f, 0.04f, 0.10f);
 		const auto processed_camera = camera_processor.process(frame);
 		const auto result =
 			fusion.process(processed_lidar, processed_camera, std::nullopt);

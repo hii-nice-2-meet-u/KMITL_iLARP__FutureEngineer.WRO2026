@@ -185,6 +185,29 @@ std::string to_csv_row(const SegmentRow &row) {
 	return stream.str();
 }
 
+const char *corner_plan_csv_header() {
+	return "timestamp_us,row_index,mode,lap,corner_index,pos_x_m,pos_y_m,"
+		   "heading_rad,wall_corner_confirmed,plan_valid,plan_active,"
+		   "corner_world_x_m,corner_world_y_m,apex_forward_m,apex_lateral_m,"
+		   "path_offset_m,plan_curvature_1pm,command_curvature_1pm";
+}
+
+std::string to_csv_row(const CornerPlanRow &row) {
+	std::ostringstream stream;
+	stream.setf(std::ios::fixed);
+	stream.precision(6);
+	stream << row.timestamp_us << ',' << row.row_index << ',' << row.mode << ','
+		   << row.lap << ',' << row.corner_index << ',' << row.pos_x_m << ','
+		   << row.pos_y_m << ',' << row.heading_rad << ','
+		   << (row.wall_corner_confirmed ? 1 : 0) << ','
+		   << (row.plan_valid ? 1 : 0) << ',' << (row.plan_active ? 1 : 0) << ','
+		   << row.corner_world_x_m << ',' << row.corner_world_y_m << ','
+		   << row.apex_forward_m << ',' << row.apex_lateral_m << ','
+		   << row.path_offset_m << ',' << row.plan_curvature_1pm << ','
+		   << row.command_curvature_1pm;
+	return stream.str();
+}
+
 const char *navigation_mode_name(navigation::NavigationMode mode) {
 	switch (mode) {
 	case navigation::NavigationMode::SEARCH_DIRECTION:
@@ -197,6 +220,32 @@ const char *navigation_mode_name(navigation::NavigationMode mode) {
 		return "FINISHED";
 	}
 	return "UNKNOWN";
+}
+
+CornerPlanRow make_corner_plan_row(std::uint64_t timestamp_us,
+	const navigation::NavigationResult &result,
+	const navigation::NavigationState &state,
+	const navigation::MapPose &pose) {
+	const navigation::NavigationDebug &debug = result.debug;
+	CornerPlanRow row;
+	row.timestamp_us = timestamp_us;
+	row.mode = navigation_mode_name(state.mode);
+	row.lap = state.lap;
+	row.corner_index = state.corner_index;
+	row.pos_x_m = pose.x_m;
+	row.pos_y_m = pose.y_m;
+	row.heading_rad = pose.heading_rad;
+	row.wall_corner_confirmed = debug.wall_corner_confirmed;
+	row.plan_valid = debug.corner_plan_valid;
+	row.plan_active = debug.corner_plan_active;
+	row.corner_world_x_m = debug.corner_plan_corner_world_x_m;
+	row.corner_world_y_m = debug.corner_plan_corner_world_y_m;
+	row.apex_forward_m = debug.corner_plan_apex_forward_m;
+	row.apex_lateral_m = debug.corner_plan_apex_lateral_m;
+	row.path_offset_m = debug.corner_plan_path_offset_m;
+	row.plan_curvature_1pm = debug.corner_plan_curvature_1pm;
+	row.command_curvature_1pm = result.command.curvature_1pm;
+	return row;
 }
 
 TelemetryRow make_telemetry_row(std::uint64_t timestamp_us,

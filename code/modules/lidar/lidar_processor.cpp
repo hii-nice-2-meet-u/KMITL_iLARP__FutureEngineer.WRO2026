@@ -2,6 +2,8 @@
 #include <cmath>
 #include <cstddef>
 #include <iostream>
+#include <algorithm>
+#include <limits>
 #include <opencv2/core/types.hpp>
 
 namespace lidar {
@@ -9,7 +11,6 @@ namespace lidar {
 // clang-format off
 ProcessedLidarData LidarProcessor::process(
 	const TimedLidarData &data,
-	float heading_error_rad,
 	std::size_t min_segment_point,
 	float max_line_error_m,
 	float max_point_gap_m,
@@ -100,8 +101,7 @@ ProcessedLidarData LidarProcessor::process(
 	// Resolve walls
 	const ResolvedWalls walls =
 		resolve_track_walls(
-			segments,
-			heading_error_rad);
+			segments);
 
 	// Obstacle detection
 	const auto obstacles =
@@ -272,7 +272,14 @@ void LidarProcessor::split_line_segments_recursive(
 		const float dy = points[i + 1].y_m - points[i].y_m;
 
 		const float gap_sq = dx * dx + dy * dy;
-		const float max_gap_sq = max_point_gap_m * max_point_gap_m;
+		// A fixed Cartesian gap rejects valid returns more often as range grows.
+		// Use a conservative range-scaled bound, capped by the configured safety
+		// maximum. This approximates the angular sampling term in D_max(r).
+		const float range_m = std::min(points[i].distance_m,
+			points[i + 1].distance_m);
+		const float adaptive_gap_m = std::clamp(
+			0.04f + 0.04f * std::max(0.0f, range_m), 0.03f, max_point_gap_m);
+		const float max_gap_sq = adaptive_gap_m * adaptive_gap_m;
 
 		if (gap_sq > max_gap_sq) {
 
@@ -440,62 +447,103 @@ std::optional<LineSegment> LidarProcessor::fit_line_segment(
 		return std::nullopt;
 	}
 
+	const float n = static_cast<float>(points.size());
 	float mean_x = 0.0f;
 	float mean_y = 0.0f;
-
 	for (const auto &p : points) {
 		mean_x += p.x_m;
 		mean_y += p.y_m;
 	}
-
-	const float n = static_cast<float>(points.size());
-
 	mean_x /= n;
 	mean_y /= n;
 
-	float sxx = 0.0f;
-	float syy = 0.0f;
-	float sxy = 0.0f;
+	float normal_x = 0.0f;
+	float normal_y = 1.0f;
+	float c = -mean_y;
+	std::vector<float> residuals(points.size());
+	std::vector<float> weights(points.size(), 1.0f);
 
-	for (const auto &p : points) {
-		const float dx = p.x_m - mean_x;
-		const float dy = p.y_m - mean_y;
+	// Four IRLS iterations are enough for this small, well-conditioned problem.
+	// The MAD scale remains useful when one return is a gross specular outlier;
+	// unlike RMS it is not inflated by that return before the weights are set.
+	constexpr float HUBER_C = 1.345f;
+	constexpr float MAD_SCALE = 1.4826f;
+	for (int iteration = 0; iteration < 4; ++iteration) {
+		float sum_w = 0.0f;
+		mean_x = 0.0f;
+		mean_y = 0.0f;
+		for (std::size_t i = 0; i < points.size(); ++i) {
+			const float e = normal_x * points[i].x_m +
+				normal_y * points[i].y_m + c;
+			residuals[i] = e;
+			const float w = weights[i];
+			sum_w += w;
+			mean_x += w * points[i].x_m;
+			mean_y += w * points[i].y_m;
+		}
+		if (sum_w <= 1e-8f) return std::nullopt;
+		mean_x /= sum_w;
+		mean_y /= sum_w;
 
-		sxx += dx * dx;
-		syy += dy * dy;
-		sxy += dx * dy;
-	}
+		float sxx = 0.0f, syy = 0.0f, sxy = 0.0f;
+		for (std::size_t i = 0; i < points.size(); ++i) {
+			const float dx = points[i].x_m - mean_x;
+			const float dy = points[i].y_m - mean_y;
+			sxx += weights[i] * dx * dx;
+			syy += weights[i] * dy * dy;
+			sxy += weights[i] * dx * dy;
+		}
+		if (std::max(sxx, syy) < 1e-8f) return std::nullopt;
 
-	// A nearly coincident cluster has no reliable orientation.
-	if (std::max(sxx, syy) < 1e-8f) {
-		return std::nullopt;
+		const float theta = 0.5f * std::atan2(2.0f * sxy, sxx - syy);
+		normal_x = -std::sin(theta);
+		normal_y = std::cos(theta);
+		c = -(normal_x * mean_x + normal_y * mean_y);
+
+		std::vector<float> abs_residuals;
+		abs_residuals.reserve(residuals.size());
+		for (const auto &p : points) {
+			abs_residuals.push_back(std::abs(
+				normal_x * p.x_m + normal_y * p.y_m + c));
+		}
+		std::nth_element(abs_residuals.begin(),
+			abs_residuals.begin() + abs_residuals.size() / 2,
+			abs_residuals.end());
+		const float scale = std::max(1e-6f,
+			MAD_SCALE * abs_residuals[abs_residuals.size() / 2]);
+		for (std::size_t i = 0; i < points.size(); ++i) {
+			const float e = std::abs(normal_x * points[i].x_m +
+				normal_y * points[i].y_m + c);
+			const float limit = HUBER_C * scale;
+			weights[i] = e <= limit ? 1.0f : limit / e;
+		}
 	}
 
 	LineSegment result;
-	const float theta = 0.5f * std::atan2(2.0f * sxy, sxx - syy);
-
-	const float dir_x = std::cos(theta);
-	const float dir_y = std::sin(theta);
-
-	const float normal_x = -dir_y;
-	const float normal_y = dir_x;
-
-	const float c = -(normal_x * mean_x + normal_y * mean_y);
-
-	float error_sum = 0.0f;
-
-	for (const auto &p : points) {
-		const float distance = normal_x * p.x_m + normal_y * p.y_m + c;
-
-		error_sum += distance * distance;
+	const float theta = std::atan2(-normal_x, normal_y);
+	float weighted_error_sum = 0.0f;
+	float weight_sum = 0.0f;
+	for (std::size_t i = 0; i < points.size(); ++i) {
+		const float distance = normal_x * points[i].x_m + normal_y * points[i].y_m + c;
+		const float w = weights[i];
+		weighted_error_sum += w * distance * distance;
+		weight_sum += w;
 	}
-	auto project_to_line = [&](const CartesianPoint &p) -> cv::Point2f {
-		const float d = normal_x * p.x_m + normal_y * p.y_m + c;
-		return cv::Point2f(p.x_m - d * normal_x, p.y_m - d * normal_y);
-	};
+	const float dir_x = normal_y;
+	const float dir_y = -normal_x;
+	float min_projection = std::numeric_limits<float>::max();
+	float max_projection = std::numeric_limits<float>::lowest();
+	for (const auto &p : points) {
+		const float projection = dir_x * p.x_m + dir_y * p.y_m;
+		min_projection = std::min(min_projection, projection);
+		max_projection = std::max(max_projection, projection);
+	}
+	const cv::Point2f origin{dir_x * min_projection - c * normal_x,
+		dir_y * min_projection - c * normal_y};
+	const cv::Point2f direction{dir_x, dir_y};
 
-	result.start = project_to_line(points.front());
-	result.end = project_to_line(points.back());
+	result.start = origin;
+	result.end = origin + direction * (max_projection - min_projection);
 
 	result.angle_rad = theta;
 
@@ -504,13 +552,13 @@ std::optional<LineSegment> LidarProcessor::fit_line_segment(
 
 	result.line_c = c;
 
-	result.rms_error_m = std::sqrt(error_sum / n);
+	result.rms_error_m = std::sqrt(weighted_error_sum / weight_sum);
 
 	return result;
 }
 
 ResolvedWalls LidarProcessor::resolve_track_walls(
-	const std::vector<LineSegment> &segments, float heading_error_rad) const {
+	const std::vector<LineSegment> &segments) const {
 
 	ResolvedWalls result;
 
@@ -542,8 +590,7 @@ ResolvedWalls LidarProcessor::resolve_track_walls(
 
 		const cv::Point2f center = (segment.start + segment.end) * 0.5f;
 
-		const float corrected_angle =
-			normalize_line_angle(segment.angle_rad + heading_error_rad);
+		const float corrected_angle = normalize_line_angle(segment.angle_rad);
 
 		const float side_angle_error = std::abs(
 			std::abs(corrected_angle) - static_cast<float>(M_PI) * 0.5f);

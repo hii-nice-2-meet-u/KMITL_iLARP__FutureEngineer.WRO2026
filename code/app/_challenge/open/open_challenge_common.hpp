@@ -66,15 +66,28 @@ inline navigation::NavigationConfig make_navigation_config() {
 
 	// ======
 	// Speed and acceleration
-	config.search_speed_mps = 0.19f;
+	// Slow tuning pass (~0.4 m/s cap): after fixing the drivetrain stall and the
+	// turn-overshoot, drive gently first, then raise once a clean slow lap is
+	// confirmed. All targets sit at/above the ~0.30 m/s min-RPM stall floor so
+	// nothing is clipped into the dead zone. See docs/CORNER_STRATEGY_REDESIGN and
+	// LOG_5_NOOB.
+	config.search_speed_mps = 0.09f;
 	config.search_minimum_speed_mps = 0.06f;
-	config.normal_speed_mps = 0.45f;
-	config.approach_speed_mps = 0.26f;
-	config.turning_speed_mps = 0.28f;
-	config.maximum_replay_speed_mps = 0.55f;
-	config.max_acceleration_mps2 = 5.0f;
+	config.normal_speed_mps = 0.4f;
+	config.approach_speed_mps = 0.25f;
+	config.turning_speed_mps = 0.2f;
+	config.maximum_replay_speed_mps = 0.40f; // keep laps 2-3 at the slow cap too
+	config.max_acceleration_mps2 = 3.0f;
 	config.max_deceleration_mps2 = 5.0f;
-	config.max_lateral_acceleration_mps2 = 0.50f;
+	config.max_lateral_acceleration_mps2 = 1.097f;
+
+	// Achieved-vs-Ackermann curvature. 1.0 (the old value) makes the real turn
+	// radius too tight -> corners cut in and drift (LOG_5_NOOB, sim_track). 1.3 is
+	// the physical estimate from the measured R_min 0.155 m vs the 0.210 m
+	// geometric clamp (VEHICLE_MECHANICS_REVIEW sec 6) -- a tape measurement, so
+	// trusted over the noisier log-derived ~2. Provisional until measure
+	// --speed-sweep (M-4); raise toward 2 if corners still cut inside.
+	config.curvature_gain = 1.3f;
 
 	// ======
 	// Direction search and corridor target
@@ -85,55 +98,66 @@ inline navigation::NavigationConfig make_navigation_config() {
 	// ======
 	// Learned-map replay for laps 2 and 3
 	config.lap2_speed_factor = 1.10f;
-	config.lap3_speed_factor = 1.15f;
+	config.lap3_speed_factor = 1.10f;
 	config.replay_approach_factor_weight = 0.50f;
 	config.replay_turn_gate_distance_m = 0.40f;
 	config.replay_front_safety_override_distance_m = 0.25f;
 
 	// ======
 	// Turn approach and trigger geometry
-	config.approach_distance_m = 0.90f;
-	config.turn_trigger_distance_m = 0.65f;
-	config.turn_rearm_distance_m = 0.80f;
-	config.turn_preview_time_s = 0.1f;
-	config.use_wall_corner_trigger = true;
-	config.front_wall_fallback_distance_m = 0.56f;
+	config.approach_distance_m = 0.95f;
+	config.turn_trigger_distance_m = 0.90f;
+	config.turn_rearm_distance_m = 0.40f;
+	config.turn_preview_time_s = 0.15f;
+	// Use the stable front-wall trigger for now; inner-wall corner landmarks
+	// are disabled while the practice-track geometry is being validated.
+	config.use_wall_corner_trigger = false;
+	config.front_wall_fallback_distance_m = 0.80f;
 	config.wall_corner_to_path_offset_m = 0.02f;
 	// Must stay above the vehicle's minimum turning radius. With
 	// wheelbase_m = 0.16375 that is 0.210 m at the 38 deg steering clamp and
 	// 0.164 m at the 45 deg actuator limit. This value also sets the corner
 	// feed-forward magnitude atan2(wheelbase_m, radius) and the geometric turn
 	// trigger distance, so it cannot be tuned for cornering line alone.
-	config.corner_radius_m = 0.45f;
+	// config.corner_radius_m = 0.45f;
+	config.corner_radius_m = 0.315f;
 
 	// ======
 	// Steering transition and rate limit
-	config.turn_entry_blend_rad = 22.5f * PI / 180.0f;
-	config.max_steering_rate_rad_s = 3.0f;
-	config.turn_exit_blend_rad = 32.0f * PI / 180.0f;
+	config.turn_entry_blend_rad = 12.5f * PI / 180.0f;
+	config.max_steering_rate_rad_s = 10.0f;
+	config.turn_exit_blend_rad = 20.0f * PI / 180.0f;
 
 	// ======
 	// Turn completion
-	config.heading_tolerance_rad = 16.50f * PI / 180.0f;
+	config.heading_tolerance_rad = 10.50f * PI / 180.0f;
 	config.exit_acceleration_blend_rad = 20.0f * PI / 180.0f;
 	config.heading_confirm_frames = 2;
 
 	// ======
 	// Corridor-following steering controller
-	config.stanley.k = 1.00f;
-	config.stanley.max_steering_rad = 38.0f * PI / 180.0f;
+	config.stanley.k = 1.05f;
+	config.stanley.max_steering_rad = 42.0f * PI / 180.0f;
 	// Mode-independent steering clamp (F-11). Kept equal to the Stanley limit
 	// so today's behaviour is unchanged; tune independently if needed.
-	config.max_steering_rad = 38.0f * PI / 180.0f;
-	config.stanley.heading_pid.kp = 1.00f;
-	config.stanley.heading_pid.ki = 0.08f;
-	config.stanley.heading_pid.kd = 0.075f;
+	config.max_steering_rad = 42.0f * PI / 180.0f;
+	// Match the calibrated servo travel used by the Open Challenge actuator.
+	config.servo_min_pulse_us = 850;
+	config.servo_center_pulse_us = 1400;
+	config.servo_max_pulse_us = 1950;
+	config.maximum_servo_step_us = 350;
+	config.stanley.heading_pid.kp = 0.75f;
+	config.stanley.heading_pid.ki = 0.05f;
+	config.stanley.heading_pid.kd = 0.085f;
 
 	// ======
 	// Turn heading controller
-	config.turn_heading_pid.kp = 0.30f;
-	config.turn_heading_pid.ki = 0.08f;
-	config.turn_heading_pid.kd = 0.048f;
+	config.turn_heading_pid.kp = 0.0f;
+	config.turn_heading_pid.ki = 0.0f;
+	config.turn_heading_pid.kd = 0.0f;
+	// config.turn_heading_pid.kp = 0.50f;
+	// config.turn_heading_pid.ki = 0.08f;
+	// config.turn_heading_pid.kd = 0.038f;
 
 	// ======
 	// Course completion and inner-corner validation
@@ -150,11 +174,11 @@ inline navigation::NavigationConfig make_navigation_config() {
 // magic numbers at the call site.
 struct LidarProcessParams {
 	std::size_t min_segment_point{4};
-	float max_line_error_m{0.035f};
-	float max_point_gap_m{0.12f};
+	float max_line_error_m{0.015f};
+	float max_point_gap_m{0.06f};
 	float max_angle_diff_deg{5.0f};
-	float max_collinear_error_m{0.04f};
-	float max_segment_gap_m{0.10f};
+	float max_collinear_error_m{0.025f};
+	float max_segment_gap_m{0.06f};
 };
 
 inline const LidarProcessParams &lidar_process_params() {
@@ -163,11 +187,11 @@ inline const LidarProcessParams &lidar_process_params() {
 }
 
 inline lidar::ProcessedLidarData process_scan(lidar::LidarProcessor &processor,
-	const TimedLidarData &scan, float wall_correction_rad) {
+	const TimedLidarData &scan, const lidar::ScanMotion &motion) {
 	const LidarProcessParams &p = lidar_process_params();
-	return processor.process(scan, wall_correction_rad, p.min_segment_point,
+	return processor.process(scan, p.min_segment_point,
 		p.max_line_error_m, p.max_point_gap_m, p.max_angle_diff_deg,
-		p.max_collinear_error_m, p.max_segment_gap_m);
+		p.max_collinear_error_m, p.max_segment_gap_m, motion);
 }
 
 inline logging::JsonObject lidar_process_params_json(

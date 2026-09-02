@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include "corner_planner.hpp"
+
 namespace navigation {
 
 NavigationController::NavigationController(
@@ -10,6 +12,7 @@ NavigationController::NavigationController(
 	: config_(config), direction_estimator_(direction_config),
 	  stanley_(config.stanley), turn_heading_pid_(config.turn_heading_pid) {
 	model_.wheelbase_m = config_.wheelbase_m;
+	model_.curvature_gain = config_.curvature_gain;
 }
 
 // UPDATE
@@ -45,8 +48,8 @@ NavigationResult NavigationController::update(
 
 	case NavigationMode::TURNING:
 
-		result.command =
-			update_turning(heading_rad, speed_mps, dt_s, result.debug);
+		result.command = update_turning(
+			heading_rad, speed_mps, dt_s, map_pose, result.debug);
 
 		break;
 
@@ -78,6 +81,11 @@ NavigationResult NavigationController::update(
 	result.debug.turn_trigger_frames = turn_trigger_frames_;
 	result.debug.turn_armed = state_.turn_armed;
 
+	// Shadow corner planner: fill the corner_plan_* group for corner_plan.csv.
+	// Pure instrumentation -- it reads state and writes debug only, never the
+	// command, so it is behaviour-neutral whether or not the planner actuates.
+	populate_corner_plan_debug(map_pose, result.debug);
+
 	// Boundary of the delta->kappa migration: the mode handlers above still
 	// speak steering angle, so express that as curvature here. condition_command
 	// converts it back before the existing shaping. The round trip
@@ -86,7 +94,6 @@ NavigationResult NavigationController::update(
 	// quantisation, so the emitted pulse is unchanged.
 	result.command.curvature_1pm =
 		model_.curvature_for_steering(result.command.steering_rad);
-
 	result.command = condition_command(result.command, dt_s,
 		state_.mode == NavigationMode::FINISHED);
 
@@ -124,6 +131,7 @@ void NavigationController::reset(float heading_rad) {
 	last_valid_wall_heading_rad_ = heading_rad;
 	lost_wall_timer_s_ = 0.0f;
 	has_last_valid_wall_heading_ = false;
+	outer_wall_was_valid_ = false;
 
 	conditioned_steering_rad_ = 0.0f;
 	conditioned_speed_mps_ = 0.0f;
@@ -233,7 +241,7 @@ NavigationCommand NavigationController::update_normal(
 
 		start_turn(heading_rad);
 
-		return update_turning(heading_rad, speed_mps, dt_s, debug);
+		return update_turning(heading_rad, speed_mps, dt_s, map_pose, debug);
 	}
 
 	// ---------------------------------------------------------
@@ -242,7 +250,14 @@ NavigationCommand NavigationController::update_normal(
 
 	if (track_walls.outer == nullptr) {
 
-		stanley_.reset();
+		// F-14: reset the Stanley integral once, on the wall-lost transition,
+		// not every frame the wall is absent. A flickering outer wall otherwise
+		// wipes the accumulated correction on every drop and never lets the
+		// controller hold a steady-state integral through an intermittent stretch.
+		if (outer_wall_was_valid_) {
+			stanley_.reset();
+		}
+		outer_wall_was_valid_ = false;
 		lost_wall_timer_s_ += last_elapsed_update_s_;
 
 		command.target_speed_mps = config_.lost_wall_speed_mps;
@@ -276,6 +291,7 @@ NavigationCommand NavigationController::update_normal(
 	} else {
 		has_last_valid_wall_heading_ = false;
 	}
+	outer_wall_was_valid_ = true;
 	lost_wall_timer_s_ = 0.0f;
 
 	debug.outer_wall_valid = true;
@@ -320,8 +336,13 @@ NavigationCommand NavigationController::update_normal(
 	// Stanley steering
 	// ---------------------------------------------------------
 
-	command.steering_rad = stanley_.calculate(
-		cross_track_error_m, heading_error_rad, speed_mps, dt_s);
+	const float stanley_curvature_1pm = stanley_.calculate_curvature(
+		cross_track_error_m, heading_error_rad, speed_mps, dt_s, model_);
+	command.curvature_1pm = stanley_curvature_1pm;
+	// Keep the legacy field populated for diagnostics and for the unchanged
+	// command-conditioning path. This is the exact inverse of the conversion
+	// above under the identity curvature model, so emitted pulses are stable.
+	command.steering_rad = model_.steering_for_curvature(stanley_curvature_1pm);
 
 	// ---------------------------------------------------------
 	// Target speed
@@ -385,8 +406,9 @@ NavigationCommand NavigationController::update_normal(
 
 // TURNING
 
-NavigationCommand NavigationController::update_turning(
-	float heading_rad, float speed_mps, float dt_s, NavigationDebug &debug) {
+NavigationCommand NavigationController::update_turning(float heading_rad,
+	float speed_mps, float dt_s, const std::optional<MapPose> &map_pose,
+	NavigationDebug &debug) {
 
 	NavigationCommand command;
 
@@ -398,13 +420,12 @@ NavigationCommand NavigationController::update_turning(
 	const float reference_speed_mps =
 		std::clamp(measured_speed_mps, 0.0f, corner_speed_mps);
 
-	const float remaining_reference_rad =
-		std::max(0.0f, turn_total_angle_rad_ - turn_reference_progress_rad_);
-
-	const float reference_step_rad = std::min(
-		remaining_reference_rad, reference_speed_mps / radius_m * dt_s);
-
-	turn_reference_progress_rad_ += reference_step_rad;
+	const kinematics::ClothoidReference reference{
+		turn_total_angle_rad_, radius_m, config_.corner_clothoid_ramp_m};
+	turn_reference_distance_m_ = std::min(reference.total_length_m(),
+		turn_reference_distance_m_ + reference_speed_mps * dt_s);
+	turn_reference_progress_rad_ = reference.heading_progress_at_distance(
+		turn_reference_distance_m_);
 
 	turn_reference_heading_rad_ = normalize_angle(turn_start_heading_rad_ +
 		turn_heading_sign_ * turn_reference_progress_rad_);
@@ -434,27 +455,12 @@ NavigationCommand NavigationController::update_turning(
 	// steering > 0 = RIGHT
 	// ---------------------------------------------------------
 
-	const float entry_weight = config_.turn_entry_blend_rad > 1e-6f
-		? smoothstep(
-			  turn_reference_progress_rad_ / config_.turn_entry_blend_rad)
-		: 1.0f;
-
-	const float remaining_after_step_rad =
-		std::max(0.0f, turn_total_angle_rad_ - turn_reference_progress_rad_);
-
-	const float exit_weight = config_.turn_exit_blend_rad > 1e-6f
-		? smoothstep(remaining_after_step_rad / config_.turn_exit_blend_rad)
-		: 1.0f;
-
-	const float feedforward_magnitude_rad =
-		std::atan2(std::max(0.01f, config_.wheelbase_m), radius_m);
-
-	const float feedforward_rad = config_.heading_to_steering_sign *
-		turn_heading_sign_ * feedforward_magnitude_rad *
-		std::min(entry_weight, exit_weight);
-
-	const float entry_steering_rad =
-		turn_entry_steering_rad_ * (1.0f - entry_weight);
+	const float reference_curvature = reference.curvature_at_distance(
+		turn_reference_distance_m_);
+	const float feedforward_curvature_1pm = config_.heading_to_steering_sign *
+		turn_heading_sign_ * reference_curvature;
+	const float feedforward_rad = model_.steering_for_curvature(
+		feedforward_curvature_1pm);
 
 	const float tracking_steering_rad =
 		turn_heading_pid_.calculate(0.0f, -tracking_error_rad, dt_s) *
@@ -462,8 +468,47 @@ NavigationCommand NavigationController::update_turning(
 
 	debug.turn_feedforward_rad = feedforward_rad;
 
-	command.steering_rad = clamp_steering(
-		entry_steering_rad + feedforward_rad + tracking_steering_rad);
+	// Keep the existing delta sum exact for P-05's behaviour-neutral plumbing.
+	// The feed-forward term has crossed the kappa boundary and is converted back
+	// before the legacy sum; P-10 will replace this sum with a native reference.
+	float combined_steering_rad =
+		model_.steering_for_curvature(feedforward_curvature_1pm) +
+		tracking_steering_rad;
+	// Taper the turn command toward zero during the final exit heading window.
+	// Outside turn_exit_blend_rad the command is unchanged; inside it, steering
+	// smoothly reduces as the measured heading approaches the target so the
+	// vehicle can reacquire the next straight without carrying the corner angle.
+	if (config_.turn_exit_blend_rad > 1e-6f) {
+		const float exit_weight = std::max(0.35f, smoothstep(
+			std::abs(heading_error_rad) / config_.turn_exit_blend_rad));
+		combined_steering_rad *= exit_weight;
+	}
+	command.curvature_1pm = model_.curvature_for_steering(combined_steering_rad);
+	command.steering_rad = clamp_steering(combined_steering_rad);
+
+	// Corner-strategy redesign (C-2): re-plan the steering to the measured corner
+	// point every tick. Overrides only the curvature/steering; the reference
+	// above still drives progress + completion below, so the turn is entered and
+	// finished exactly as before. Falls back to the legacy arc whenever the
+	// landmark or pose is unavailable. Inert unless use_corner_planner is set.
+	if (config_.use_corner_planner && map_pose.has_value() &&
+		wall_corner_filtered_world_.has_value() &&
+		state_.direction.has_value()) {
+		const float interior_sign =
+			(*state_.direction == DrivingDirection::CLOCKWISE) ? 1.0f : -1.0f;
+		const CornerPlan plan = CornerPlanner::plan(
+			wall_corner_filtered_world_->x, wall_corner_filtered_world_->y,
+			map_pose->x_m, map_pose->y_m, map_pose->heading_rad,
+			config_.corner_planner_path_offset_m, interior_sign, model_,
+			config_.max_steering_rad);
+		if (plan.valid) {
+			command.curvature_1pm = plan.curvature_1pm;
+			command.steering_rad =
+				clamp_steering(model_.steering_for_curvature(plan.curvature_1pm));
+			debug.wall_corner_forward_m = plan.apex_forward_m;
+			debug.wall_corner_lateral_m = plan.apex_lateral_m;
+		}
+	}
 
 	const float exit_acceleration_weight =
 		config_.exit_acceleration_blend_rad > 1e-6f ? 1.0f -
@@ -506,6 +551,13 @@ NavigationCommand NavigationController::update_turning(
 		// the wall belonging to the old corner.
 		state_.turn_armed = false;
 		turn_trigger_frames_ = 0;
+
+		// C-1: the planner / shadow logger kept this corner's landmark alive
+		// through the turn; clear it now so the next corner re-acquires from
+		// scratch. No-op for the pure-legacy path (already cleared at start_turn).
+		if (config_.use_corner_planner || config_.log_corner_plan) {
+			reset_wall_corner_tracker();
+		}
 	}
 
 	return command;
@@ -863,6 +915,36 @@ void NavigationController::reset_wall_corner_tracker() {
 	wall_corner_confirmed_ = false;
 }
 
+void NavigationController::populate_corner_plan_debug(
+	const std::optional<MapPose> &map_pose, NavigationDebug &debug) const {
+	if (!(config_.use_corner_planner || config_.log_corner_plan)) {
+		return;
+	}
+	if (!map_pose.has_value() || !wall_corner_filtered_world_.has_value() ||
+		!state_.direction.has_value()) {
+		return; // no confirmed corner point to plan to on this tick
+	}
+
+	const float interior_sign =
+		(*state_.direction == DrivingDirection::CLOCKWISE) ? 1.0f : -1.0f;
+	const CornerPlan plan = CornerPlanner::plan(
+		wall_corner_filtered_world_->x, wall_corner_filtered_world_->y,
+		map_pose->x_m, map_pose->y_m, map_pose->heading_rad,
+		config_.corner_planner_path_offset_m, interior_sign, model_,
+		config_.max_steering_rad);
+
+	debug.corner_plan_valid = plan.valid;
+	debug.corner_plan_curvature_1pm = plan.curvature_1pm;
+	debug.corner_plan_apex_forward_m = plan.apex_forward_m;
+	debug.corner_plan_apex_lateral_m = plan.apex_lateral_m;
+	debug.corner_plan_path_offset_m = config_.corner_planner_path_offset_m;
+	debug.corner_plan_corner_world_x_m = wall_corner_filtered_world_->x;
+	debug.corner_plan_corner_world_y_m = wall_corner_filtered_world_->y;
+	// Only ticks where the planner actually drove the actuator.
+	debug.corner_plan_active = config_.use_corner_planner && plan.valid &&
+		state_.mode == NavigationMode::TURNING;
+}
+
 // TURN TRIGGER
 
 bool NavigationController::should_start_turn(
@@ -914,7 +996,11 @@ bool NavigationController::should_start_turn(
 				debug.effective_turn_trigger_m;
 	}
 
-	if (state_.lap >= 1 && replay_hint.has_value() &&
+	// C-3: with the planner on the learned map is a prior, not a veto -- a live
+	// confirmed trigger always wins, so the suppression gate is skipped. The
+	// legacy path keeps the gate (audit F-10) unchanged.
+	if (!config_.use_corner_planner && state_.lap >= 1 &&
+		replay_hint.has_value() &&
 		replay_hint->distance_to_entry_m >
 			std::max(0.0f, config_.replay_turn_gate_distance_m)) {
 		const bool safety_override = lidar_data.walls.front.has_value() &&
@@ -977,11 +1063,21 @@ void NavigationController::start_turn(float heading_rad) {
 	turn_start_heading_rad_ = heading_rad;
 	turn_reference_heading_rad_ = heading_rad;
 	turn_reference_progress_rad_ = 0.0f;
+	turn_reference_distance_m_ = 0.0f;
 	turn_total_angle_rad_ = std::abs(signed_turn_angle_rad);
 	turn_heading_sign_ = heading_delta >= 0.0f ? 1.0f : -1.0f;
 	turn_entry_steering_rad_ = conditioned_steering_rad_;
 	turn_heading_pid_.reset();
-	reset_wall_corner_tracker();
+	// F-13: clear the Stanley integral too. It accumulated against the previous
+	// straight's wall geometry; carrying it across a 90 deg reorientation would
+	// bias the first wall-following correction on the next straight.
+	stanley_.reset();
+	// C-1: with the planner on (or shadow logging), the confirmed corner point is
+	// the turn's target, so it is kept alive through the corner instead of being
+	// discarded here. The pure-legacy path still clears it (the arc ignores it).
+	if (!config_.use_corner_planner && !config_.log_corner_plan) {
+		reset_wall_corner_tracker();
+	}
 	lost_wall_timer_s_ = 0.0f;
 	has_last_valid_wall_heading_ = false;
 
@@ -1018,9 +1114,20 @@ bool NavigationController::is_turn_complete(float heading_error_rad) {
 
 	const bool heading_confirmed = state_.heading_confirm_frames >=
 		std::max(1, config_.heading_confirm_frames);
+
+	// The OTOS heading is ground truth for "have I turned 90 deg". The clothoid
+	// reference advances with travelled arc length at the modelled radius; on this
+	// chassis the rear axle scrubs and pivots faster than the model, so the
+	// reference lags the real heading by ~2x. The old gate required the reference
+	// to reach 80% before honouring a heading cross, which let the robot overshoot
+	// the target by ~50-60 deg every corner (LOG_5_NOOB) -- it exited badly
+	// misaligned, lost the wall, and spiralled. Complete as soon as the measured
+	// heading actually reaches the target; signed_remaining starts at +full_angle
+	// and only reaches 0 after a full physical turn, so this cannot fire early. A
+	// small progress floor rejects a single-tick heading glitch at entry.
 	const float signed_remaining = turn_heading_sign_ * heading_error_rad;
 	const bool crossed_target = signed_remaining <= 0.0f &&
-		turn_reference_progress_rad_ >= turn_total_angle_rad_ * 0.80f;
+		turn_reference_progress_rad_ >= turn_total_angle_rad_ * 0.15f;
 
 	return heading_confirmed || crossed_target;
 }
@@ -1195,28 +1302,32 @@ NavigationCommand NavigationController::condition_command(
 	conditioned_speed_mps_ +=
 		std::clamp(speed_delta_mps, -max_speed_delta_mps, max_speed_delta_mps);
 
-	// Convert the curvature command back to a steering angle here -- this is the
-	// single point where kappa becomes delta. The existing shaping below is
-	// unchanged.
-	const float commanded_steering_rad =
-		model_.steering_for_curvature(command.curvature_1pm);
-	const float requested_steering_rad =
-		std::isfinite(commanded_steering_rad)
-		? clamp_steering(commanded_steering_rad)
-		: 0.0f;
-	const float time_constant_s =
-		std::max(0.0f, config_.steering_filter_time_constant_s);
-	const float filter_weight =
-		time_constant_s <= 1e-6f ? 1.0f : dt_s / (time_constant_s + dt_s);
-	const float filtered_target_rad = conditioned_steering_rad_ +
-		(requested_steering_rad - conditioned_steering_rad_) * filter_weight;
-	const float max_steering_delta_rad =
-		std::max(0.0f, config_.max_steering_rate_rad_s) * dt_s;
-
-	conditioned_steering_rad_ +=
-		std::clamp(filtered_target_rad - conditioned_steering_rad_,
-			-max_steering_delta_rad, max_steering_delta_rad);
+	// Single actuator-derived limiter. It operates on κ, while the pulse map is
+	// evaluated in kinematics.hpp; no low-pass or independent δ slew remains.
+	const float requested_curvature = std::isfinite(command.curvature_1pm)
+		? std::clamp(command.curvature_1pm,
+			-model_.max_curvature(config_.max_steering_rad),
+			model_.max_curvature(config_.max_steering_rad)) : 0.0f;
+	const float curvature_step = model_.max_curvature_step_from_pulse(
+		conditioned_steering_rad_ == 0.0f ? 0.0f
+			: model_.curvature_for_steering(conditioned_steering_rad_),
+		requested_curvature,
+		config_.maximum_servo_step_us, config_.servo_min_pulse_us,
+		config_.servo_center_pulse_us, config_.servo_max_pulse_us,
+		config_.maximum_steering_command_deg);
+	float conditioned_curvature = model_.curvature_for_steering(
+		conditioned_steering_rad_);
+	conditioned_curvature += std::clamp(requested_curvature - conditioned_curvature,
+		-curvature_step, curvature_step);
+	conditioned_steering_rad_ = model_.steering_for_curvature(conditioned_curvature);
 	conditioned_steering_rad_ = clamp_steering(conditioned_steering_rad_);
+	if (std::abs(conditioned_curvature) > 1e-3f) {
+		conditioned_speed_mps_ = std::min(conditioned_speed_mps_,
+			kinematics::BicycleModel::speed_for_lateral_limit(
+				conditioned_curvature,
+				config_.max_lateral_acceleration_mps2,
+				conditioned_speed_mps_));
+	}
 
 	NavigationCommand conditioned;
 	conditioned.target_speed_mps = conditioned_speed_mps_;

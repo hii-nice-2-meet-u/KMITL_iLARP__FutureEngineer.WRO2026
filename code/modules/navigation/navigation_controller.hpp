@@ -54,10 +54,30 @@ struct NavigationConfig {
 	bool use_wall_corner_trigger{true};
 	float front_wall_fallback_distance_m{0.40f};
 
+	// Corner-strategy redesign (C-2). When true, TURNING steers along a curvature
+	// re-planned every tick to the *measured* corner point (corner_planner.hpp)
+	// instead of the fixed-radius open-loop arc, the confirmed landmark is kept
+	// alive through the corner (C-1), and the learned-map veto is replaced by
+	// live-wins (C-3). MUST stay false until curvature_gain is measured (M-4) and
+	// a C-0 baseline exists: with it off the corner behaviour is byte-identical
+	// to the legacy path. See docs/CORNER_STRATEGY_REDESIGN.md.
+	bool use_corner_planner{false};
+
+	// Lateral distance from the measured corner point to the planned path apex.
+	// Encodes the racing line; validate in the sim before enabling the planner.
+	float corner_planner_path_offset_m{0.30f};
+
+	// Run the planner in shadow every tick (compute + log, do NOT actuate) so
+	// corner_plan.csv captures what it would do, next to what the legacy path
+	// actually did. Independent of use_corner_planner and behaviour-neutral: it
+	// only fills debug fields and keeps the confirmed landmark alive through the
+	// corner for the log. Set false to drop the extra per-tick computation.
+	bool log_corner_plan{true};
+
 	// LiDAR origin relative to rear-axle center in the robot frame.
 	// +right points right and +forward points toward the front of the robot.
 	float lidar_lateral_offset_m{0.0f};
-	float lidar_forward_offset_m{0.081875f};
+	float lidar_forward_offset_m{0.0f};
 
 	// Signed longitudinal displacement from the detected wall corner to the
 	// virtual intersection of the incoming and outgoing vehicle paths.
@@ -95,9 +115,19 @@ struct NavigationConfig {
 	// Measure wheelbase from rear-axle center to front-axle center.
 	float wheelbase_m{0.16375f};
 
+	// Ratio of achieved curvature to the Ackermann prediction, fed to the shared
+	// BicycleModel. 1.0 is the textbook model; this chassis achieves MORE (the
+	// fixed rear axle scrubs), so at 1.0 the feed-forward under-steers the model
+	// and the real turn radius comes out too tight -- the corners cut inside and
+	// the position drifts (seen in LOG_5_NOOB and reproduced in sim_track). Raise
+	// it toward the measured value so the planned radius matches the real one.
+	// Refine with measure --speed-sweep (M-4).
+	float curvature_gain{1.0f};
+
 	// WRO outer corners have a 0.10 m wall radius. A vehicle path 0.30 m
 	// inside that wall therefore starts with an approximately 0.40 m radius.
 	float corner_radius_m{0.40f};
+	float corner_clothoid_ramp_m{0.10f};
 
 	float turn_entry_blend_rad{10.0f * 3.14159265358979323846f / 180.0f};
 
@@ -170,11 +200,19 @@ struct NavigationConfig {
 
 	// The corner speed is capped by sqrt(max lateral acceleration * radius).
 	// Raise this only after tyre-grip testing on the real competition surface.
-	float max_lateral_acceleration_mps2{1.40f};
+	// Conservative p90 from the available speed-sweep measurement.
+	float max_lateral_acceleration_mps2{1.097f};
 
 	// Output shaping removes LiDAR/line-fit jitter and prevents step commands.
 	float steering_filter_time_constant_s{0.035f};
 	float max_steering_rate_rad_s{7.0f};
+	// Pi-side actuator pulse guard. The limiter is applied once in κ-domain;
+	// these values mirror ActuatorConfig and are recorded per run.
+	std::uint16_t servo_min_pulse_us{900};
+	std::uint16_t servo_center_pulse_us{1475};
+	std::uint16_t servo_max_pulse_us{2100};
+	std::uint16_t maximum_servo_step_us{500};
+	float maximum_steering_command_deg{45.0f};
 	float max_acceleration_mps2{5.0f};
 	float max_deceleration_mps2{3.0f};
 
@@ -214,8 +252,9 @@ class NavigationController {
 		const std::optional<ReplayHint> &replay_hint,
 		const std::optional<MapPose> &map_pose, NavigationDebug &debug);
 
-	NavigationCommand update_turning(
-		float heading_rad, float speed_mps, float dt_s, NavigationDebug &debug);
+	NavigationCommand update_turning(float heading_rad, float speed_mps,
+		float dt_s, const std::optional<MapPose> &map_pose,
+		NavigationDebug &debug);
 
 	TrackWalls resolve_track_walls(const lidar::ResolvedWalls &walls) const;
 
@@ -243,6 +282,11 @@ class NavigationController {
 	void update_wall_corner_landmark(
 		const lidar::ProcessedLidarData &lidar_data,
 		const std::optional<MapPose> &map_pose, NavigationDebug &debug);
+
+	// Shadow corner-planner instrumentation: fills the corner_plan_* debug group
+	// from the confirmed landmark + pose, without touching the command.
+	void populate_corner_plan_debug(
+		const std::optional<MapPose> &map_pose, NavigationDebug &debug) const;
 
 	std::optional<cv::Point2f> find_inner_wall_corner_candidate(
 		const lidar::ProcessedLidarData &lidar_data) const;
@@ -311,6 +355,7 @@ class NavigationController {
 	float turn_reference_heading_rad_{0.0f};
 	float turn_reference_progress_rad_{0.0f};
 	float turn_total_angle_rad_{0.0f};
+	float turn_reference_distance_m_{0.0f};
 	float turn_heading_sign_{0.0f};
 	float turn_entry_steering_rad_{0.0f};
 
@@ -328,6 +373,7 @@ class NavigationController {
 	float last_valid_wall_heading_rad_{0.0f};
 	float lost_wall_timer_s_{0.0f};
 	bool has_last_valid_wall_heading_{false};
+	bool outer_wall_was_valid_{false};
 
 	float conditioned_steering_rad_{0.0f};
 	float conditioned_speed_mps_{0.0f};

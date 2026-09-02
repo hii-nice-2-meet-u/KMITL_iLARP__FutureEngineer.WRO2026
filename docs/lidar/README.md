@@ -11,6 +11,15 @@ lane.
 
 Sensor: **RPLIDAR S3** (SLAMTEC), driven through the official `rplidar_sdk`.
 
+### Physical mount convention
+
+The assembled robot mounts the RPLIDAR with its raw-angle-zero arrow pointing
+to the rear. RPLIDAR's raw 0° is the direction of that arrow, so the robot's
+front is raw 180°. `polar2cartesian()` intentionally applies the 180° mount
+compensation (`x = -d·sin(angle)`, `y = -d·cos(angle)`), leaving **+Y as the
+robot-forward axis**. This was confirmed by M-1 on 2026-09-02; do not remove
+the minus signs.
+
 ---
 
 ## 1. Responsibilities
@@ -87,28 +96,33 @@ optional `parking_wall`, and `obstacles`. Each `ObstacleObject` exposes
 `bearing_rad() = atan2(center.x, center.y)`, which the perception layer uses to
 associate it with a camera detection.
 
-### 3.0 Wall-heading correction (new parameter)
+### 3.0 Motion deskew (P-22 enabled)
 
-`process()` now takes a leading `heading_error_rad` argument (plus the tuning
-constants below as optional parameters). Feeding the OTOS-derived heading error
-in lets the processor de-rotate the scan so wall lines stay sharp instead of
-smearing into 15–20 cm bands — wall angle is corrected modulo 90° in NORMAL
-mode. Full signature:
+Each scan is deskewed into its scan-end frame using the measured OTOS forward
+velocity, yaw rate, and LiDAR revolution period. M-1 confirms that forward is
+robot +Y, matching the sign in `LidarProcessor::deskew()`. The first scan, which
+has no measured period yet, intentionally remains un-deskewed.
 
-```cpp
-process(data, heading_error_rad = 0,
-        min_segment_point = 5, max_line_error_m = 0.035,
-        max_point_gap_m = 0.10, max_angle_diff = 3.0,
-        max_collinear_error_m = 0.03, max_segment_gap_m = 0.05)
-```
-
-> **Logged geometry is in the corrected frame.** Because `heading_error_rad`
-> de-rotates the scan before classification, the `wall_angle_rad` column in
-> `telemetry.csv` and every angle in `walls.csv` are expressed in this corrected
-> frame, not the raw sensor frame. The correction applied on each tick is logged
-> as `wall_correction_rad`; subtract it to recover raw measured geometry offline.
+The old controller-injected `wall_correction_rad` path has been removed from
+LiDAR processing. Geometry is no longer rotated using the navigation target
+heading; the telemetry field is retained as a deprecated zero column for CSV
+schema compatibility.
 
 ### 3.1 Point filtering & coordinate frame
+
+`process()` now takes the tuning constants and optional `ScanMotion`; it no
+longer accepts `heading_error_rad`. Full signature:
+
+```cpp
+process(data, min_segment_point = 5, max_line_error_m = 0.035,
+        max_point_gap_m = 0.10, max_angle_diff = 3.0,
+        max_collinear_error_m = 0.03, max_segment_gap_m = 0.05,
+        motion = ScanMotion{})
+```
+
+> **Logged geometry is now in the deskewed robot frame.** The deprecated
+> `wall_correction_rad` telemetry column is always zero after P-22; it remains
+> only to preserve the existing CSV column layout.
 
 `is_valid_point()` drops points with `quality < 10`, non-finite range/angle,
 `distance < 0.015 m`, or `distance > 3.0 m`. The decision lives in

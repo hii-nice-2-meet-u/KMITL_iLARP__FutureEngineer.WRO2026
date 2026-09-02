@@ -35,7 +35,7 @@ struct InitialDirectionConfig {
 
 	float score_decay{0.7f};
 
-	int required_confirm_frames{3};
+	int required_confirm_frames{2};
 };
 
 class InitialDirectionEstimator {

@@ -9,6 +9,9 @@
 #include <string>
 #include <thread>
 
+#include <gpiod.h>
+
+#include "corner_plan_logger.hpp"
 #include "open_challenge_actuator.hpp"
 #include "open_challenge_common.hpp"
 #include "run_metadata.hpp"
@@ -22,15 +25,122 @@ namespace {
 std::atomic_bool stop_requested{false};
 
 constexpr std::uint16_t SEARCH_LAUNCH_BOOST_RPM = 1500;
-constexpr float SEARCH_LAUNCH_TIME_LIMIT_S = 0.7f;
+constexpr float SEARCH_LAUNCH_TIME_LIMIT_S = 0.4f;
 constexpr float SEARCH_LAUNCH_RELEASE_SPEED_MPS = 0.18f;
+
+// Placeholder hardware button wiring. Change these two values when the final
+// button pin is known. The input is active-low and uses the SoC pull-up.
+constexpr unsigned int START_STOP_BUTTON_BCM = 21;
+constexpr const char *START_STOP_BUTTON_CHIP = "/dev/gpiochip0";
+
+// Optional straight drive after the final lap. Tune these two values against
+// the physical start-line position; zero time disables the extra drive.
+constexpr std::int16_t FINISH_EXTRA_RAW_RPM = 250;
+constexpr float FINISH_EXTRA_TIME_S = 0.30f;
 
 void request_stop(int) {
 	stop_requested.store(true);
 	logging::notify_stop_requested();
 }
 
+class StartStopButton {
+  public:
+	~StartStopButton() {
+		if (line_ != nullptr) {
+			gpiod_line_release(line_);
+		}
+		if (chip_ != nullptr) {
+			gpiod_chip_close(chip_);
+		}
+	}
+
+	bool initialize() {
+		chip_ = gpiod_chip_open(START_STOP_BUTTON_CHIP);
+		if (chip_ == nullptr) {
+			return false;
+		}
+		line_ = gpiod_chip_get_line(chip_, START_STOP_BUTTON_BCM);
+		if (line_ == nullptr || gpiod_line_request_input_flags(
+				line_, "ilarp-start-stop",
+				GPIOD_LINE_REQUEST_FLAG_BIAS_PULL_UP) < 0) {
+			return false;
+		}
+		return true;
+	}
+
+	bool pressed() const {
+		return line_ != nullptr && gpiod_line_get_value(line_) == 0;
+	}
+
+	// Wait for a clean press before the navigation loop starts. A button held
+	// during boot is treated as not-yet-pressed, so startup is intentional.
+	bool wait_for_start() {
+		while (!stop_requested.load() && pressed()) {
+			std::this_thread::sleep_for(std::chrono::milliseconds(10));
+		}
+		while (!stop_requested.load()) {
+			if (pressed()) {
+				std::this_thread::sleep_for(std::chrono::milliseconds(35));
+				if (pressed()) {
+					stop_latch_ = true;
+					return true;
+				}
+			}
+			std::this_thread::sleep_for(std::chrono::milliseconds(10));
+		}
+		return false;
+	}
+
+	// Poll for the next press while running. The latch prevents one held
+	// button press from generating repeated stop events.
+	bool stop_pressed() {
+		if (!pressed()) {
+			stop_latch_ = false;
+			return false;
+		}
+		if (stop_latch_) {
+			return false;
+		}
+		std::this_thread::sleep_for(std::chrono::milliseconds(35));
+		if (pressed()) {
+			stop_latch_ = true;
+			return true;
+		}
+		return false;
+	}
+
+  private:
+	gpiod_chip *chip_ = nullptr;
+	gpiod_line *line_ = nullptr;
+	bool stop_latch_ = false;
+};
+
+// Drive a fixed signed raw RPM for a fixed duration after FINISHED.
+// Positive RPM drives forward; negative RPM drives backward/brakes by reverse
+// drive torque. The function keeps the steering centred and blocks until the
+// requested duration has elapsed.
+void finish_extra_drive(open_challenge::ActuatorOutput &actuators,
+	std::int16_t raw_rpm, float duration_s) {
+	if (raw_rpm == 0 || duration_s <= 0.0f) {
+		return;
+	}
+
+	navigation::NavigationCommand command;
+	command.target_speed_mps = 0.0f;
+	command.steering_rad = 0.0f;
+	command.curvature_1pm = 0.0f;
+	const auto deadline = std::chrono::steady_clock::now() +
+		std::chrono::duration<float>(duration_s);
+	while (
+		!stop_requested.load() && std::chrono::steady_clock::now() < deadline) {
+		if (!actuators.apply(command, raw_rpm)) {
+			break;
+		}
+		std::this_thread::sleep_for(std::chrono::milliseconds(10));
+	}
 }
+
+} // namespace
 
 int main(int argc, char **argv) {
 	bool direction_only = false;
@@ -49,18 +159,31 @@ int main(int argc, char **argv) {
 
 	navigation::NavigationConfig navigation_config =
 		open_challenge::make_navigation_config();
-	navigation_config.enable_replay_speed_factors = true;
+	navigation_config.enable_replay_speed_factors = false;
 	lidar::LidarModule lidar("/dev/ttyAMA0", 1000000);
 	lidar::LidarProcessor lidar_processor;
 	otos::OTOS otos;
 	navigation::NavigationController navigation(navigation_config);
 	navigation::TrackMap track_map;
 	open_challenge::ActuatorConfig actuator_config;
-	// STM32 turns commanded RPM into ~1.75x the intended ground speed; pre-scale
-	// by 1/1.75 on the Pi. Back-calculated from a 1.60 logged speed ratio and
-	// the -8.7% OTOS under-report; refine with one straight run after applying
-	// the OTOS linear scalar (measure_otos_scale) and set scale = 1 / ratio.
-	actuator_config.motor_rpm_command_scale = 0.571f;
+	// motor_rpm_command_scale: no Pi-side pre-scaling until a real
+	// command->speed map is measured (measure --speed-sweep, then set scale =
+	// 1/ratio).
+	//
+	// The earlier 0.571 (= 1/1.75, from a supposed STM32 over-speed) is
+	// DISPROVEN by LOG_5_NOOB: it scaled the ~0.28 m/s turning target down to
+	// ~58 commanded RPM, which is BELOW the drivetrain's stall floor under
+	// steering-scrub load. The motors stalled (measured_speed -> 0 while
+	// wheel_rpm held 58), and because turn_progress integrates measured speed,
+	// every turn froze mid-corner and never completed. The drivetrain
+	// under-delivers at low RPM, it does not over-deliver, so removing the
+	// starvation (1.0) is the fix until M-7 lands.
+	actuator_config.motor_rpm_command_scale = 1.0f;
+	// Stall floor so low-speed commands (approach/turn/search ~0.19-0.28 m/s)
+	// do not land in the dead zone that froze the turns in LOG_5_NOOB. 110 RPM
+	// (~0.30 m/s) clears the observed 58 RPM stall by ~1.9x. Provisional --
+	// tighten once measure --speed-sweep locates the real floor.
+	actuator_config.minimum_moving_wheel_rpm = 70;
 	open_challenge::ActuatorOutput actuators(actuator_config);
 	const std::uint64_t search_launch_time_limit_us =
 		static_cast<std::uint64_t>(
@@ -107,6 +230,17 @@ int main(int argc, char **argv) {
 		return 1;
 	}
 
+	StartStopButton start_stop_button;
+	if (!start_stop_button.initialize()) {
+		std::cerr << "Start/stop button initialization failed: chip="
+				  << START_STOP_BUTTON_CHIP << " BCM GPIO="
+				  << START_STOP_BUTTON_BCM << "\n";
+		actuators.emergency_stop();
+		actuators.close();
+		lidar.stop();
+		return 1;
+	}
+
 	if (const auto voltage = actuators.get_voltage(); voltage.has_value()) {
 		if (voltage <= 11.67f) {
 			std::cerr << "[WARNING] Battery voltage is low :" << *voltage
@@ -121,8 +255,8 @@ int main(int argc, char **argv) {
 	const open_challenge::OtosScalars otos_scalars =
 		open_challenge::read_otos_scalars(otos);
 	const std::string run_directory = logging::make_run_directory();
-	logging::JsonObject run_metadata = logging::make_run_metadata(argv[0],
-		navigation_config, otos_scalars.linear, otos_scalars.angular);
+	logging::JsonObject run_metadata = logging::make_run_metadata(
+		argv[0], navigation_config, otos_scalars.linear, otos_scalars.angular);
 	run_metadata.add_object("actuator_config",
 		open_challenge::actuator_config_json(actuator_config));
 	run_metadata.add_object("lidar_process_params",
@@ -137,8 +271,18 @@ int main(int argc, char **argv) {
 	logging::TelemetryLogger telemetry_log(run_directory);
 	logging::WallLogger wall_log(run_directory);
 	logging::SegmentLogger segment_log(run_directory);
+	logging::CornerPlanLogger corner_plan_log(run_directory);
 	std::optional<logging::EventLogger> event_log;
 	std::cout << "Logging to " << run_directory << '\n';
+	std::cout << "Press BCM GPIO " << START_STOP_BUTTON_BCM
+			  << " to start (active-low, internal pull-up)\n";
+	if (!start_stop_button.wait_for_start()) {
+		actuators.emergency_stop();
+		actuators.close();
+		lidar.stop();
+		return 0;
+	}
+	std::cout << "Start button pressed; navigation started\n";
 
 	bool navigation_initialized = false;
 	std::uint64_t last_log_timestamp_us = 0;
@@ -165,6 +309,12 @@ int main(int argc, char **argv) {
 	bool search_launch_boost_active = false;
 
 	while (!stop_requested.load()) {
+		if (start_stop_button.stop_pressed()) {
+			std::cout << "Stop button pressed; emergency stop\n";
+			stop_requested.store(true);
+			actuators.emergency_stop();
+			break;
+		}
 		TimedLidarData scan;
 		if (!lidar.wait_for_data(scan)) {
 			std::cerr << "LiDAR stream stopped\n";
@@ -221,20 +371,23 @@ int main(int argc, char **argv) {
 		}
 
 		const navigation::MapPose map_pose{position.x, position.y, heading_rad};
-		const auto replay_hint =
-			track_map.replay_hint(map_pose, navigation.state().corner_index);
+		// Front-wall-only navigation: keep map learning/logging available, but
+		// do not let replay data affect speed or turn triggering.
+		const std::optional<navigation::ReplayHint> replay_hint = std::nullopt;
 
-		const float wall_correction_rad = open_challenge::normalize_angle(
-			heading_rad - navigation.state().target_heading_rad);
+		const lidar::ScanMotion scan_motion{velocity.x * std::cos(heading_rad) +
+				velocity.y * std::sin(heading_rad),
+			velocity.h,
+			scan.scan_period_us > 0 ? scan.scan_period_us / 1'000'000.0f : 0.0f,
+			scan.scan_period_us > 0};
 		const auto lidar_process_start = std::chrono::steady_clock::now();
-		const auto processed = open_challenge::process_scan(
-			lidar_processor, scan, wall_correction_rad);
+		const auto processed =
+			open_challenge::process_scan(lidar_processor, scan, scan_motion);
 		logging::StageTiming stage_timing;
-		stage_timing.lidar_process_us =
-			static_cast<std::uint32_t>(
-				std::chrono::duration_cast<std::chrono::microseconds>(
-					std::chrono::steady_clock::now() - lidar_process_start)
-					.count());
+		stage_timing.lidar_process_us = static_cast<std::uint32_t>(
+			std::chrono::duration_cast<std::chrono::microseconds>(
+				std::chrono::steady_clock::now() - lidar_process_start)
+				.count());
 		// The open app has no camera stage; camera_process_valid stays false.
 		auto result = navigation.update(
 			processed, heading_rad, speed_mps, replay_hint, map_pose);
@@ -275,16 +428,15 @@ int main(int argc, char **argv) {
 			(previous_mode != navigation::NavigationMode::TURNING &&
 				state.mode == navigation::NavigationMode::TURNING)) {
 			if (result.debug.effective_turn_trigger_m > 0.0f) {
-				turn_trigger_distance_m =
-					result.debug.effective_turn_trigger_m;
+				turn_trigger_distance_m = result.debug.effective_turn_trigger_m;
 			}
 			if (result.debug.wall_corner_confirmed) {
 				turn_source = "INNER_CORNER";
 				turn_inner_distance_valid = true;
 				turn_inner_forward_m = result.debug.wall_corner_forward_m;
-				turn_inner_distance_m = std::hypot(
-					result.debug.wall_corner_forward_m,
-					result.debug.wall_corner_lateral_m);
+				turn_inner_distance_m =
+					std::hypot(result.debug.wall_corner_forward_m,
+						result.debug.wall_corner_lateral_m);
 			} else if (result.debug.front_wall_fallback_active) {
 				turn_source = "FRONT_FALLBACK";
 				turn_inner_distance_valid = false;
@@ -369,6 +521,10 @@ int main(int argc, char **argv) {
 		const bool finished =
 			state.mode == navigation::NavigationMode::FINISHED;
 		if (finished || direction_only_complete) {
+			if (finished) {
+				// finish_extra_drive(
+				// 	actuators, FINISH_EXTRA_RAW_RPM, FINISH_EXTRA_TIME_S);
+			}
 			actuators.emergency_stop();
 		} else if (!actuators.apply(result.command, wheel_rpm_override)) {
 			std::cerr << "SPI actuator command failed; emergency stop\n";
@@ -402,14 +558,15 @@ int main(int argc, char **argv) {
 			static_cast<int>(processed.reject_stats.rejected_quality);
 		telemetry_row.lidar_points_rejected_range =
 			static_cast<int>(processed.reject_stats.rejected_range);
-		telemetry_row.wall_correction_rad = wall_correction_rad;
 		telemetry_log.record(telemetry_row);
 		wall_log.record(
 			processed.walls, state.mode, map_pose, scan.timestamp_us);
 		segment_log.record(processed, state.mode);
+		corner_plan_log.record(result, state, map_pose, scan.timestamp_us);
 
 		if (direction_only_complete) {
-			std::cout << "============================================================\n";
+			std::cout << "====================================================="
+						 "=======\n";
 			open_challenge::print_command(result, state, heading_rad, speed_mps,
 				telemetry.wheel_rpm, telemetry.servo_pulse_us);
 			std::cout << "[TURN] source=" << turn_source << '\n';
@@ -420,7 +577,8 @@ int main(int argc, char **argv) {
 		}
 
 		if (finished) {
-			std::cout << "============================================================\n";
+			std::cout << "====================================================="
+						 "=======\n";
 			open_challenge::print_command(result, state, heading_rad, speed_mps,
 				telemetry.wheel_rpm, telemetry.servo_pulse_us);
 			std::cout << "[TURN] source=" << turn_source << '\n';
@@ -430,15 +588,16 @@ int main(int argc, char **argv) {
 
 		if (last_log_timestamp_us == 0 ||
 			scan.timestamp_us - last_log_timestamp_us >= 250000) {
-			std::cout << "============================================================\n";
+			std::cout << "====================================================="
+						 "=======\n";
 			open_challenge::print_command(result, state, heading_rad, speed_mps,
 				telemetry.wheel_rpm, telemetry.servo_pulse_us);
 			const bool current_inner_visible =
 				result.debug.wall_corner_candidate_valid ||
 				result.debug.wall_corner_confirmed;
-			const float current_inner_distance_m = std::hypot(
-				result.debug.wall_corner_forward_m,
-				result.debug.wall_corner_lateral_m);
+			const float current_inner_distance_m =
+				std::hypot(result.debug.wall_corner_forward_m,
+					result.debug.wall_corner_lateral_m);
 			const float displayed_inner_forward_m = current_inner_visible
 				? result.debug.wall_corner_forward_m
 				: turn_inner_forward_m;
@@ -451,10 +610,9 @@ int main(int argc, char **argv) {
 				result.debug.effective_turn_trigger_m > 0.0f
 				? result.debug.effective_turn_trigger_m
 				: turn_trigger_distance_m;
-			std::cout << "[TURN] source=" << turn_source << " corner_forward="
-					  << displayed_inner_forward_m << "m"
-					  << " trigger=" << displayed_trigger_m
-					  << "m\n";
+			std::cout << "[TURN] source=" << turn_source
+					  << " corner_forward=" << displayed_inner_forward_m << "m"
+					  << " trigger=" << displayed_trigger_m << "m\n";
 			std::cout << "[FOLLOW] source=" << follow_source
 					  << " outer=" << follow_outer_distance_m << "m"
 					  << " inner=" << follow_inner_distance_m << "m"
@@ -493,11 +651,14 @@ int main(int argc, char **argv) {
 	const bool telemetry_ok = telemetry_log.flush();
 	const bool walls_ok = wall_log.flush();
 	const bool segments_ok = segment_log.flush();
+	const bool corner_plan_ok = corner_plan_log.flush();
 	const bool events_ok = event_log.has_value() ? event_log->flush() : true;
 	const std::size_t telemetry_dropped_rows =
 		telemetry_log.dropped_row_count();
 	const std::size_t walls_dropped_rows = wall_log.dropped_row_count();
 	const std::size_t segments_dropped_rows = segment_log.dropped_row_count();
+	const std::size_t corner_plan_dropped_rows =
+		corner_plan_log.dropped_row_count();
 	const std::size_t events_dropped_rows =
 		event_log.has_value() ? event_log->dropped_row_count() : 0;
 	logging::JsonObject logging_summary;
@@ -505,23 +666,27 @@ int main(int argc, char **argv) {
 		.add_unsigned("telemetry_dropped_rows", telemetry_dropped_rows)
 		.add_unsigned("walls_dropped_rows", walls_dropped_rows)
 		.add_unsigned("segments_dropped_rows", segments_dropped_rows)
+		.add_unsigned("corner_plan_dropped_rows", corner_plan_dropped_rows)
 		.add_unsigned("events_dropped_rows", events_dropped_rows);
 	run_metadata.add_object("logging", logging_summary);
 	const bool metadata_ok =
 		logging::write_run_metadata(run_directory, run_metadata);
 	if (!corners_ok || !telemetry_ok || !walls_ok || !segments_ok ||
-		!events_ok || !metadata_ok) {
+		!corner_plan_ok || !events_ok || !metadata_ok) {
 		std::cerr << "Logging write failure; run data may be incomplete\n";
 	}
 	std::cout << "Logging dropped rows: telemetry=" << telemetry_dropped_rows
 			  << " walls=" << walls_dropped_rows
 			  << " segments=" << segments_dropped_rows
+			  << " corner_plan=" << corner_plan_dropped_rows
 			  << " events=" << events_dropped_rows << '\n';
 	if (telemetry_dropped_rows > 0 || walls_dropped_rows > 0 ||
-		segments_dropped_rows > 0 || events_dropped_rows > 0) {
+		segments_dropped_rows > 0 || corner_plan_dropped_rows > 0 ||
+		events_dropped_rows > 0) {
 		std::cerr << "Logging queue overflow: telemetry="
 				  << telemetry_dropped_rows << " walls=" << walls_dropped_rows
 				  << " segments=" << segments_dropped_rows
+				  << " corner_plan=" << corner_plan_dropped_rows
 				  << " events=" << events_dropped_rows << '\n';
 	}
 	if (!stopped_safely) {

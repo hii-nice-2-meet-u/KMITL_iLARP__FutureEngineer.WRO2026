@@ -25,6 +25,13 @@ float StanleyController::calculate(float cross_track_error_m,
 		steering, -config_.max_steering_rad, config_.max_steering_rad);
 }
 
+float StanleyController::calculate_curvature(float cross_track_error_m,
+	float heading_error_rad, float speed_mps, float dt_s,
+	const kinematics::BicycleModel &model) const {
+	return model.curvature_for_steering(calculate(
+		cross_track_error_m, heading_error_rad, speed_mps, dt_s));
+}
+
 void StanleyController::set_config(const StanleyConfig &config) {
 
 	config_ = config;

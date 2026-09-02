@@ -455,7 +455,7 @@ std::string sign_check(
 void draw_debug_panel(cv::Mat &map, const lidar::ProcessedLidarData &processed,
 	const navigation::NavigationResult &nav,
 	const navigation::NavigationState &state, float heading_rad,
-	float speed_mps, float wall_correction_rad, float target_outer_distance_m,
+	float speed_mps, float target_outer_distance_m,
 	float turn_trigger_distance_m, float max_steering_rad, int total_turns,
 	const navigation::TrackMap &track_map,
 	const std::optional<navigation::ReplayHint> &replay_hint,
@@ -569,9 +569,6 @@ void draw_debug_panel(cv::Mat &map, const lidar::ProcessedLidarData &processed,
 			" deg   PROGRESS " + fixed(nav.debug.turn_progress * 100.0f, 0) +
 			"%",
 		white);
-	text("LIDAR HEADING CORR  " + fixed(wall_correction_rad * RAD_TO_DEG, 1) +
-			" deg",
-		dim);
 
 	section("SPEED PROFILE");
 	text("OTOS " + fixed(speed_mps, 2) + " m/s   OUTPUT " +
@@ -801,13 +798,16 @@ int main() {
 					  << heading_rad * RAD_TO_DEG << " deg\n";
 		}
 
-		const float wall_correction_rad = normalize_angle(
-			heading_rad - navigation.state().target_heading_rad);
+		const lidar::ScanMotion scan_motion{
+			vel.x * std::cos(heading_rad) + vel.y * std::sin(heading_rad),
+			vel.h,
+			scan.scan_period_us > 0 ? scan.scan_period_us / 1'000'000.0f : 0.0f,
+			scan.scan_period_us > 0};
 
 		const auto process_start = std::chrono::steady_clock::now();
 
 		const auto processed = lidar_processor.process(
-			scan, wall_correction_rad, 4, 0.035f, 0.12f, 5.0f, 0.04f, 0.10f);
+			scan, 4, 0.035f, 0.12f, 5.0f, 0.04f, 0.10f, scan_motion);
 
 		const navigation::MapPose map_pose{pos.x, pos.y, heading_rad};
 		const auto replay_hint =
@@ -933,7 +933,7 @@ int main() {
 		}
 
 		draw_debug_panel(debug_map, processed, nav_result, state, heading_rad,
-			speed_mps, wall_correction_rad, nav_config.target_outer_distance_m,
+			speed_mps, nav_config.target_outer_distance_m,
 			nav_config.turn_trigger_distance_m,
 			nav_config.stanley.max_steering_rad, nav_config.total_turns,
 			track_map, replay_hint, frame_diff_us, process_us);

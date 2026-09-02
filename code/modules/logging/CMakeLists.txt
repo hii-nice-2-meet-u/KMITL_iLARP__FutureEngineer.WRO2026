@@ -2,6 +2,7 @@ find_package(Threads REQUIRED)
 
 add_library(logging STATIC
     async_csv_writer.cpp
+    corner_plan_logger.cpp
     log_types.cpp
     run_metadata.cpp
     segment_logger.cpp

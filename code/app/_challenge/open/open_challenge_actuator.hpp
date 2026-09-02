@@ -18,7 +18,7 @@ struct ActuatorConfig {
 	std::uint8_t spi_chip_select{0};
 	std::uint32_t spi_speed_hz{15'000'000};
 
-	float wheel_diameter_m{0.053f};
+	float wheel_diameter_m{0.0525f};
 	std::uint16_t maximum_wheel_rpm{1500};
 
 	// Pi-side compensation for the STM32 RPM scale. A commanded RPM produces
@@ -34,10 +34,20 @@ struct ActuatorConfig {
 	// 1.0 = no compensation.
 	float motor_rpm_command_scale{1.0f};
 
-	std::uint16_t servo_min_pulse_us{950};
-	std::uint16_t servo_center_pulse_us{1475};
-	std::uint16_t servo_max_pulse_us{2000};
-	std::uint16_t maximum_servo_step_us{500};
+	// Drivetrain stall floor. The twin-N20 drive cannot hold a low commanded RPM
+	// under load: LOG_5_NOOB shows 58 commanded RPM producing zero motion while
+	// scrubbing through a corner, which froze every turn (turn_progress integrates
+	// measured speed). When the speed->RPM command is non-zero but below this
+	// floor, it is raised to the floor so the vehicle always actually moves. It
+	// applies only to the speed->RPM path, never to a stop (target 0 stays 0) or
+	// to wheel_rpm_override (the launch boost). 0 disables it. The apps set the
+	// working value; tighten it once measure --speed-sweep locates the real floor.
+	std::uint16_t minimum_moving_wheel_rpm{0};
+
+	std::uint16_t servo_min_pulse_us{850};
+	std::uint16_t servo_center_pulse_us{1400};
+	std::uint16_t servo_max_pulse_us{1950};
+	std::uint16_t maximum_servo_step_us{250};
 	float steering_to_servo_sign{1.0f};
 	float maximum_steering_command_deg{45.0f};
 };
@@ -48,8 +58,8 @@ struct ActuatorTelemetry {
 	// commanded_servo_pulse_us is the value requested before that per-tick step
 	// clamp, so a reader can see when maximum_servo_step_us is clipping the
 	// steering command rather than inferring it from consecutive deltas.
-	std::uint16_t servo_pulse_us{1475};
-	std::uint16_t commanded_servo_pulse_us{1475};
+	std::uint16_t servo_pulse_us{1400};
+	std::uint16_t commanded_servo_pulse_us{1400};
 	bool armed{false};
 };
 
@@ -61,6 +71,8 @@ inline logging::JsonObject actuator_config_json(const ActuatorConfig &config) {
 		.add_unsigned("maximum_wheel_rpm", config.maximum_wheel_rpm)
 		.add_number(
 			"motor_rpm_command_scale", config.motor_rpm_command_scale)
+		.add_unsigned(
+			"minimum_moving_wheel_rpm", config.minimum_moving_wheel_rpm)
 		.add_unsigned("servo_min_pulse_us", config.servo_min_pulse_us)
 		.add_unsigned("servo_center_pulse_us", config.servo_center_pulse_us)
 		.add_unsigned("servo_max_pulse_us", config.servo_max_pulse_us)
@@ -194,9 +206,20 @@ class ActuatorOutput {
 		// to wheel_rpm_override: the search-launch boost is an empirical max
 		// kick, not a speed target, and its release is speed-gated by OTOS, so
 		// scaling it would only weaken the launch.
-		const float rpm = speed_mps * 60.0f /
+		float rpm = speed_mps * 60.0f /
 			(3.14159265358979323846f * diameter_m) *
 			config_.motor_rpm_command_scale;
+		// Stall floor: a non-zero move command below the drivetrain's usable RPM
+		// is raised to the floor so the vehicle actually moves instead of sitting
+		// and buzzing (see minimum_moving_wheel_rpm / LOG_5_NOOB). A stop command
+		// (speed ~ 0) is never floored -- it must be able to reach zero.
+		if (config_.minimum_moving_wheel_rpm > 0 &&
+			std::abs(speed_mps) > 1e-3f &&
+			std::abs(rpm) <
+				static_cast<float>(config_.minimum_moving_wheel_rpm)) {
+			rpm = std::copysign(
+				static_cast<float>(config_.minimum_moving_wheel_rpm), speed_mps);
+		}
 		const float maximum_rpm = static_cast<float>(
 			std::clamp<std::uint16_t>(config_.maximum_wheel_rpm, 1,
 				std::numeric_limits<std::int16_t>::max()));

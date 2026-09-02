@@ -229,6 +229,7 @@ JsonObject navigation_config_json(const navigation::NavigationConfig &config) {
 		.add_integer("wall_corner_max_missed_frames",
 			config.wall_corner_max_missed_frames)
 		.add_number("wheelbase_m", config.wheelbase_m)
+		.add_number("curvature_gain", config.curvature_gain)
 		.add_number("corner_radius_m", config.corner_radius_m)
 		.add_number("turn_entry_blend_rad", config.turn_entry_blend_rad)
 		.add_number("turn_exit_blend_rad", config.turn_exit_blend_rad)
@@ -268,6 +269,12 @@ JsonObject navigation_config_json(const navigation::NavigationConfig &config) {
 			config.steering_filter_time_constant_s)
 		.add_number(
 			"max_steering_rate_rad_s", config.max_steering_rate_rad_s)
+		.add_integer("servo_min_pulse_us", config.servo_min_pulse_us)
+		.add_integer("servo_center_pulse_us", config.servo_center_pulse_us)
+		.add_integer("servo_max_pulse_us", config.servo_max_pulse_us)
+		.add_integer("maximum_servo_step_us", config.maximum_servo_step_us)
+		.add_number("maximum_steering_command_deg",
+			config.maximum_steering_command_deg)
 		.add_number("max_acceleration_mps2", config.max_acceleration_mps2)
 		.add_number("max_deceleration_mps2", config.max_deceleration_mps2)
 		.add_number(

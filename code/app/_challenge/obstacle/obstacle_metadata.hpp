@@ -36,7 +36,11 @@ inline logging::JsonObject perception_config_json(
 
 inline logging::JsonObject obstacle_config_json(const ObstacleConfig &config) {
 	logging::JsonObject object;
-	object.add_number("activation_distance_m", config.activation_distance_m)
+	object.add_number("wheelbase_m", config.wheelbase_m)
+		.add_number("curvature_gain", config.curvature_gain)
+		.add_number("maximum_combined_steering_rad",
+			config.maximum_combined_steering_rad)
+		.add_number("activation_distance_m", config.activation_distance_m)
 		.add_number("release_forward_m", config.release_forward_m)
 		.add_number("pass_clearance_m", config.pass_clearance_m)
 		.add_number("minimum_lookahead_m", config.minimum_lookahead_m)

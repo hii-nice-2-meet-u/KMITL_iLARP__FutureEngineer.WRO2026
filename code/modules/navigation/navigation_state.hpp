@@ -67,6 +67,20 @@ struct NavigationDebug {
 	float active_approach_speed_mps{0.0f};
 	int wall_corner_confirm_frames{0};
 
+	// Corner-planner shadow instrumentation (redesign C-2). Computed every tick
+	// the confirmed corner landmark and pose are available, whether or not the
+	// planner is actuating (use_corner_planner), so corner_plan.csv can validate
+	// the racing line / apex offset from real logs before the planner is enabled.
+	// corner_plan_active is true only on ticks it actually drove the actuator.
+	bool corner_plan_valid{false};
+	bool corner_plan_active{false};
+	float corner_plan_curvature_1pm{0.0f};
+	float corner_plan_apex_forward_m{0.0f};
+	float corner_plan_apex_lateral_m{0.0f};
+	float corner_plan_path_offset_m{0.0f};
+	float corner_plan_corner_world_x_m{0.0f};
+	float corner_plan_corner_world_y_m{0.0f};
+
 	// Controller internals. These are what make the gains tunable from a log:
 	// the summed command alone cannot separate a cross-track correction from a
 	// heading correction of the opposite sign.

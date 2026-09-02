@@ -13,11 +13,13 @@
 #include "camera_module.hpp"
 #include "camera_processor.hpp"
 #include "obstacle_controller.hpp"
+#include "obstacle_navigation_config.hpp"
 #include "obstacle_metadata.hpp"
 #include "open_challenge_actuator.hpp"
 #include "open_challenge_common.hpp"
 #include "perception.hpp"
 #include "run_metadata.hpp"
+#include "corner_plan_logger.hpp"
 #include "segment_logger.hpp"
 #include "telemetry_logger.hpp"
 #include "track_map.hpp"
@@ -43,24 +45,23 @@ int main(int, char **argv) {
 	std::signal(SIGTERM, request_stop);
 
 	navigation::NavigationConfig navigation_config =
-		open_challenge::make_navigation_config();
+		obstacle_challenge::make_navigation_config();
 	navigation_config.enable_replay_speed_factors = false;
 
-	navigation_config.normal_speed_mps = 0.20f;
-	navigation_config.approach_speed_mps = 0.17f;
-	navigation_config.turning_speed_mps = 0.20f;
-	navigation_config.search_speed_mps = 0.15f;
-	navigation_config.maximum_replay_speed_mps = 0.42f;
-
 	perception::PerceptionConfig perception_config;
+
 	perception_config.lidar_mount = {0.0f, 0.081875f, 0.0f};
-	perception_config.camera_mount = {0.0f, 0.0f, 0.0f};
+	perception_config.camera_mount = {0.0f, 0.104f, 0.0f};
 	perception_config.max_sensor_time_difference_us = 100'000;
 	perception_config.max_bearing_difference_rad =
 		8.0f * 3.14159265358979323846f / 180.0f;
 	perception_config.minimum_confirmed_confidence = 0.55f;
 
 	obstacle_challenge::ObstacleConfig obstacle_config;
+	obstacle_config.wheelbase_m = navigation_config.wheelbase_m;
+	obstacle_config.curvature_gain = navigation_config.curvature_gain;
+	obstacle_config.maximum_combined_steering_rad =
+		navigation_config.max_steering_rad;
 	obstacle_config.activation_distance_m = 1.50f;
 	obstacle_config.pass_clearance_m = 0.32f;
 	obstacle_config.minimum_lookahead_m = 0.35f;
@@ -82,11 +83,14 @@ int main(int, char **argv) {
 	navigation::TrackMap track_map;
 	obstacle_challenge::ObstacleController obstacle_controller(obstacle_config);
 	open_challenge::ActuatorConfig actuator_config;
-	// STM32 turns commanded RPM into ~1.75x the intended ground speed; pre-scale
-	// by 1/1.75 on the Pi. Back-calculated from a 1.60 logged speed ratio and
-	// the -8.7% OTOS under-report; refine with one straight run after applying
-	// the OTOS linear scalar (measure_otos_scale) and set scale = 1 / ratio.
-	actuator_config.motor_rpm_command_scale = 0.571f;
+	// See open/main.cpp: the 0.571 pre-scale is disproven by LOG_5_NOOB (it
+	// starved the ~0.28 m/s turning target to ~58 RPM, below the stall floor, so
+	// turns froze mid-corner). No pre-scaling until measure --speed-sweep gives a
+	// real command->speed map.
+	actuator_config.motor_rpm_command_scale = 1.0f;
+	// Stall floor: see open/main.cpp. 110 RPM (~0.30 m/s) keeps low-speed
+	// commands out of the dead zone that froze the turns in LOG_5_NOOB.
+	actuator_config.minimum_moving_wheel_rpm = 110;
 	open_challenge::ActuatorOutput actuators(actuator_config);
 	const std::uint64_t search_launch_time_limit_us =
 		static_cast<std::uint64_t>(
@@ -166,6 +170,7 @@ int main(int, char **argv) {
 	logging::TelemetryLogger telemetry_log(run_directory);
 	logging::WallLogger wall_log(run_directory);
 	logging::SegmentLogger segment_log(run_directory);
+	logging::CornerPlanLogger corner_plan_log(run_directory);
 	std::optional<logging::EventLogger> event_log;
 	std::cout << "Logging to " << run_directory << '\n';
 
@@ -229,13 +234,18 @@ int main(int, char **argv) {
 		}
 
 		const navigation::MapPose pose{position.x, position.y, heading_rad};
-		const auto replay_hint =
-			track_map.replay_hint(pose, navigation.state().corner_index);
-		const float wall_correction_rad = open_challenge::normalize_angle(
-			heading_rad - navigation.state().target_heading_rad);
+		// Obstacle navigation starts from live walls. The map remains available
+		// for traffic-landmark memory, but learned corner replay must not change
+		// the independently-owned obstacle navigation behaviour yet.
+		const std::optional<navigation::ReplayHint> replay_hint = std::nullopt;
+		const lidar::ScanMotion scan_motion{
+			velocity.x * std::cos(heading_rad) + velocity.y * std::sin(heading_rad),
+			velocity.h,
+			scan.scan_period_us > 0 ? scan.scan_period_us / 1'000'000.0f : 0.0f,
+			scan.scan_period_us > 0};
 		const auto lidar_process_start = std::chrono::steady_clock::now();
 		const auto processed_lidar = open_challenge::process_scan(
-			lidar_processor, scan, wall_correction_rad);
+			lidar_processor, scan, scan_motion);
 		logging::StageTiming stage_timing;
 		stage_timing.lidar_process_us =
 			static_cast<std::uint32_t>(
@@ -301,19 +311,11 @@ int main(int, char **argv) {
 				*object.required_pass_side, object.fusion_confidence);
 		}
 
-		navigation::NavigationCommand priority_command;
-		priority_command.target_speed_mps = obstacle_config.avoidance_speed_mps;
+		navigation::NavigationResult result = navigation.update(
+			processed_lidar, heading_rad, speed_mps, replay_hint, pose);
 		const auto obstacle_status = obstacle_controller.apply(fused, pose,
 			navigation.state().mode, track_map.traffic_landmarks(),
-			navigation.state().lap >= 1, priority_command);
-
-		navigation::NavigationResult result;
-		if (obstacle_status.active) {
-			result.command = priority_command;
-		} else {
-			result = navigation.update(
-				processed_lidar, heading_rad, speed_mps, replay_hint, pose);
-		}
+			navigation.state().lap >= 1, result.command);
 		const auto &state = navigation.state();
 		std::optional<std::int16_t> wheel_rpm_override;
 
@@ -442,11 +444,11 @@ int main(int, char **argv) {
 			static_cast<int>(processed_lidar.reject_stats.rejected_quality);
 		telemetry_row.lidar_points_rejected_range =
 			static_cast<int>(processed_lidar.reject_stats.rejected_range);
-		telemetry_row.wall_correction_rad = wall_correction_rad;
 		telemetry_log.record(telemetry_row);
 		wall_log.record(
 			processed_lidar.walls, state.mode, pose, scan.timestamp_us);
 		segment_log.record(processed_lidar, state.mode);
+		corner_plan_log.record(result, state, pose, scan.timestamp_us);
 
 		if (last_console_us == 0 ||
 			scan.timestamp_us - last_console_us >= 250'000) {
@@ -496,11 +498,14 @@ int main(int, char **argv) {
 	const bool telemetry_ok = telemetry_log.flush();
 	const bool walls_ok = wall_log.flush();
 	const bool segments_ok = segment_log.flush();
+	const bool corner_plan_ok = corner_plan_log.flush();
 	const bool events_ok = event_log.has_value() ? event_log->flush() : true;
 	const std::size_t telemetry_dropped_rows =
 		telemetry_log.dropped_row_count();
 	const std::size_t walls_dropped_rows = wall_log.dropped_row_count();
 	const std::size_t segments_dropped_rows = segment_log.dropped_row_count();
+	const std::size_t corner_plan_dropped_rows =
+		corner_plan_log.dropped_row_count();
 	const std::size_t events_dropped_rows =
 		event_log.has_value() ? event_log->dropped_row_count() : 0;
 	logging::JsonObject logging_summary;
@@ -508,23 +513,27 @@ int main(int, char **argv) {
 		.add_unsigned("telemetry_dropped_rows", telemetry_dropped_rows)
 		.add_unsigned("walls_dropped_rows", walls_dropped_rows)
 		.add_unsigned("segments_dropped_rows", segments_dropped_rows)
+		.add_unsigned("corner_plan_dropped_rows", corner_plan_dropped_rows)
 		.add_unsigned("events_dropped_rows", events_dropped_rows);
 	run_metadata.add_object("logging", logging_summary);
 	const bool metadata_ok =
 		logging::write_run_metadata(run_directory, run_metadata);
 	if (!corners_ok || !telemetry_ok || !walls_ok || !segments_ok ||
-		!events_ok || !metadata_ok) {
+		!corner_plan_ok || !events_ok || !metadata_ok) {
 		std::cerr << "Logging write failure; run data may be incomplete\n";
 	}
 	std::cout << "Logging dropped rows: telemetry=" << telemetry_dropped_rows
 			  << " walls=" << walls_dropped_rows
 			  << " segments=" << segments_dropped_rows
+			  << " corner_plan=" << corner_plan_dropped_rows
 			  << " events=" << events_dropped_rows << '\n';
 	if (telemetry_dropped_rows > 0 || walls_dropped_rows > 0 ||
-		segments_dropped_rows > 0 || events_dropped_rows > 0) {
+		segments_dropped_rows > 0 || corner_plan_dropped_rows > 0 ||
+		events_dropped_rows > 0) {
 		std::cerr << "Logging queue overflow: telemetry="
 				  << telemetry_dropped_rows << " walls=" << walls_dropped_rows
 				  << " segments=" << segments_dropped_rows
+				  << " corner_plan=" << corner_plan_dropped_rows
 				  << " events=" << events_dropped_rows << '\n';
 	}
 	if (final_voltage.has_value()) {

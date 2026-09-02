@@ -14,8 +14,7 @@ struct LidarPoint
     // last. Reconstructed from the angle relative to the scan's start angle
     // under a constant-angular-velocity assumption, because ascendScanData()
     // sorts the buffer by angle and destroys the acquisition order. It is the
-    // sole input to motion deskew; nothing reads it yet (deskew is gated on
-    // the LiDAR-zero hardware check, HARDWARE_CHECKS.md Check 1 / M-1).
+    // sole input to motion deskew; captured before angle sorting.
     float scan_phase{0.0f};
 };
 

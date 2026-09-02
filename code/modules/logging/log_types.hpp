@@ -276,15 +276,49 @@ struct SegmentRow {
 	const char *role{"NONE"};
 };
 
+// One row per tick in the corner window, for the corner-strategy redesign.
+// Records what the shadow corner planner would command (plan_*) next to what was
+// actually commanded (command_curvature_1pm), so the racing-line/apex offset can
+// be validated from real logs before the planner drives the actuator.
+struct CornerPlanRow {
+	std::uint64_t timestamp_us{0};
+	std::uint64_t row_index{0};
+	const char *mode{"UNKNOWN"};
+	int lap{0};
+	std::size_t corner_index{0};
+	float pos_x_m{0.0f};
+	float pos_y_m{0.0f};
+	float heading_rad{0.0f};
+	bool wall_corner_confirmed{false};
+	bool plan_valid{false};
+	bool plan_active{false};
+	float corner_world_x_m{0.0f};
+	float corner_world_y_m{0.0f};
+	float apex_forward_m{0.0f};
+	float apex_lateral_m{0.0f};
+	float path_offset_m{0.0f};
+	float plan_curvature_1pm{0.0f};
+	float command_curvature_1pm{0.0f};
+};
+
 const char *telemetry_csv_header();
 const char *corners_csv_header();
 const char *walls_csv_header();
 const char *segments_csv_header();
+const char *corner_plan_csv_header();
 
 std::string to_csv_row(const TelemetryRow &row);
 std::string to_csv_row(const CornerRow &row);
 std::string to_csv_row(const WallRow &row);
 std::string to_csv_row(const SegmentRow &row);
+std::string to_csv_row(const CornerPlanRow &row);
+
+// Build a corner-plan row from a navigation result + pose. mode/lap/corner come
+// from state; the plan_* fields from result.debug; command_curvature from the
+// conditioned command.
+CornerPlanRow make_corner_plan_row(std::uint64_t timestamp_us,
+	const navigation::NavigationResult &result,
+	const navigation::NavigationState &state, const navigation::MapPose &pose);
 
 const char *navigation_mode_name(navigation::NavigationMode mode);
 

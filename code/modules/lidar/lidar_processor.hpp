@@ -22,13 +22,10 @@ struct CartesianPoint {
 
 // Vehicle motion across one scan window, used to undo LiDAR motion distortion.
 // Passed into process() by value so the processor stays a pure function of its
-// inputs (unlike heading_error_rad, which injects a controller quantity).
+// inputs.
 //
-// Deskew is applied per point only when `valid` is true. Nothing sets it true
-// yet: enabling deskew is gated on HARDWARE_CHECKS.md Check 1 (M-1), because the
-// forward-translation term is subtracted along the LiDAR frame's forward axis
-// and, if that axis is 180 deg from what this code assumes, deskew doubles the
-// error instead of removing it.
+// Deskew is applied per point only when `valid` is true. Production apps set it
+// after M-1 confirmed the rearward raw-zero mount and +Y robot-forward frame.
 struct ScanMotion {
 	float forward_speed_mps{0.0f}; // signed; forward positive, robot +Y
 	float yaw_rate_rps{0.0f};	   // OTOS convention (+ = CCW)
@@ -111,7 +108,7 @@ struct ProcessedLidarData {
 class LidarProcessor {
   public:
 	ProcessedLidarData process(const TimedLidarData &data,
-		float heading_error_rad = 0.0f, std::size_t min_segment_point = 5,
+		std::size_t min_segment_point = 5,
 		float max_line_error_m = 0.035f, float max_point_gap_m = 0.10f,
 		float max_angle_diff = 3.0f, float max_collinear_error_m = 0.03f,
 		float max_segment_gap_m = 0.05f,
@@ -124,6 +121,11 @@ class LidarProcessor {
 	// in isolation.
 	CartesianPoint deskew(const CartesianPoint &point, float scan_phase,
 		const ScanMotion &motion) const;
+
+	// Fit a line with iteratively reweighted Huber loss. Public so the robust
+	// estimator can be tested without requiring a live LiDAR device.
+	std::optional<LineSegment> fit_line_segment(
+		const std::vector<CartesianPoint> &points) const;
 
 	void draw_segment(
 		cv::Mat &img, const LineSegment &segment, float scale_px_per_m) const;
@@ -156,9 +158,6 @@ class LidarProcessor {
 		std::vector<std::vector<CartesianPoint>> &segments) const;
 
 	
-	std::optional<LineSegment> fit_line_segment(
-    	const std::vector<CartesianPoint> &points) const;
-
 	void merge_aligned_segments(
 		std::vector<LineSegment> &segments,
 		float max_angle_diff_rad,
@@ -167,8 +166,7 @@ class LidarProcessor {
 
 	// clang-format on
 
-	ResolvedWalls resolve_track_walls(const std::vector<LineSegment> &segments,
-		float heading_error_rad) const;
+	ResolvedWalls resolve_track_walls(const std::vector<LineSegment> &segments) const;
 
 	bool is_same_segment(
 		const LineSegment &a, const std::optional<LineSegment> &b) const;

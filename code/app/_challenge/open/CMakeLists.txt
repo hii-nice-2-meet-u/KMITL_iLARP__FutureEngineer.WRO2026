@@ -4,6 +4,10 @@ add_executable(open_challenge_main
 )
 
 target_link_libraries(open_challenge_main PRIVATE
+    PkgConfig::LIBGPIOD
+)
+
+target_link_libraries(open_challenge_main PRIVATE
     lidar_module
     lidar_processor
     navigation

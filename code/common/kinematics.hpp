@@ -2,8 +2,51 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 
 namespace kinematics {
+
+struct ClothoidReference {
+	float total_angle_rad{0.0f};
+	float radius_m{0.4f};
+	float ramp_length_m{0.10f};
+
+	float total_length_m() const {
+		return std::max(0.0f, radius_m) * std::abs(total_angle_rad);
+	}
+	float effective_ramp_m() const {
+		return std::min(total_length_m() * 0.5f,
+			std::max(1e-4f, ramp_length_m));
+	}
+	float peak_curvature_1pm() const {
+		const float length = total_length_m();
+		const float ramp = effective_ramp_m();
+		return length > 1e-6f ? std::abs(total_angle_rad) /
+			(std::max(0.0f, length - 2.0f * ramp) + ramp) : 0.0f;
+	}
+	float curvature_at_distance(float distance_m) const {
+		const float s = std::clamp(distance_m, 0.0f, total_length_m());
+		const float ramp = effective_ramp_m();
+		const float plateau_end = total_length_m() - ramp;
+		const float peak = peak_curvature_1pm();
+		if (s < ramp) return peak * s / ramp;
+		if (s <= plateau_end) return peak;
+		return peak * (total_length_m() - s) / ramp;
+	}
+	float heading_progress_at_distance(float distance_m) const {
+		const float s = std::clamp(distance_m, 0.0f, total_length_m());
+		const float ramp = effective_ramp_m();
+		const float plateau_end = total_length_m() - ramp;
+		const float peak = peak_curvature_1pm();
+		float integral = 0.0f;
+		if (s <= ramp) integral = peak * s * s / (2.0f * ramp);
+		else if (s <= plateau_end) integral = peak * (s - ramp * 0.5f);
+		else integral = peak * (plateau_end - ramp * 0.5f) +
+			peak * (s - plateau_end) *
+			(1.0f - (s - plateau_end) / (2.0f * ramp));
+		return integral;
+	}
+};
 
 // The bicycle model, in one place.
 //
@@ -68,6 +111,40 @@ struct BicycleModel {
 		const float scaled = wheelbase * curvature_1pm / gain;
 		return std::max(0.0f, max_steering_rate_rad_s) *
 			(1.0f + scaled * scaled) * gain / wheelbase;
+	}
+
+	// Convert the actuator's per-tick pulse step into a curvature step. The
+	// asymmetric pulse spans are intentional: the real servo has different
+	// travel on either side of centre. All pulse<->steering kinematics remain in
+	// this header so the navigation conditioner does not duplicate atan/tan.
+	float max_curvature_step_from_pulse(
+		float curvature_1pm, float target_curvature_1pm,
+		std::uint16_t maximum_pulse_step_us,
+		std::uint16_t servo_min_pulse_us, std::uint16_t servo_center_pulse_us,
+		std::uint16_t servo_max_pulse_us,
+		float maximum_steering_command_deg) const {
+		const float max_deg = std::max(0.1f,
+			std::abs(maximum_steering_command_deg));
+		const float min_pulse = static_cast<float>(
+			std::min(servo_min_pulse_us, servo_max_pulse_us));
+		const float max_pulse = static_cast<float>(
+			std::max(servo_min_pulse_us, servo_max_pulse_us));
+		const float centre = std::clamp(static_cast<float>(
+			servo_center_pulse_us), min_pulse, max_pulse);
+		const float steering = steering_for_curvature(curvature_1pm);
+		const float command_deg = std::clamp(
+			steering * 180.0f / 3.14159265358979323846f, -max_deg, max_deg);
+		const float span = command_deg >= 0.0f
+			? max_pulse - centre : centre - min_pulse;
+		const float pulse = centre + command_deg / max_deg * span;
+		const float direction = target_curvature_1pm >= curvature_1pm ? 1.0f : -1.0f;
+		const float target_pulse = std::clamp(pulse + direction *
+			static_cast<float>(maximum_pulse_step_us), min_pulse, max_pulse);
+		const float target_command_deg = span > 1e-6f
+			? (target_pulse - centre) / span * max_deg : command_deg;
+		const float target_curvature = curvature_for_steering(
+			target_command_deg * 3.14159265358979323846f / 180.0f);
+		return std::max(1e-6f, std::abs(target_curvature - curvature_1pm));
 	}
 
 	// Speed at which a given curvature produces the given lateral acceleration.

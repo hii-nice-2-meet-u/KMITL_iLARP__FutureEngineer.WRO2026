@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "../common/kinematics.hpp"
 #include "pid.hpp"
 
 namespace control {
@@ -49,6 +50,13 @@ class StanleyController {
 	 */
 	float calculate(float cross_track_error_m, float heading_error_rad,
 		float speed_mps, float dt_s) const;
+
+	// Curvature-native entry point for the navigation controller. The Stanley
+	// law remains the same; this only moves the delta-to-kappa conversion to the
+	// controller boundary so downstream code can compose curvatures.
+	float calculate_curvature(float cross_track_error_m, float heading_error_rad,
+		float speed_mps, float dt_s,
+		const kinematics::BicycleModel &model) const;
 
 	void reset();
 

@@ -66,7 +66,8 @@ struct ReplayHint {
 struct TrackMapConfig {
 	float replay_preview_distance_m{1.10f};
 	float replay_max_heading_error_rad{0.45f};
-	float minimum_replay_confidence{0.60f};
+	// Use learned-map replay only after a corner has at least 90% confidence.
+	float minimum_replay_confidence{0.90f};
 	// TODO(WRO tuning): A three-lap run provides few updates per corner, so the
 	// fixed 0.25 EMA can over-weight lap 1. After real logging is available,
 	// compare a 0.5-0.6 weight with a running average of

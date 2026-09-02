@@ -11,6 +11,7 @@
 #include "obstacle_controller.hpp"
 #include "open_challenge_common.hpp"
 #include "perception.hpp"
+#include "run_metadata.hpp"
 
 namespace {
 constexpr int SIZE = 640;
@@ -87,7 +88,7 @@ void draw_camera(cv::Mat &v, const camera::ProcessedCameraData &data,
 int main() {
 	std::signal(SIGINT, stop); std::signal(SIGTERM, stop);
 	perception::PerceptionConfig pc;
-	pc.lidar_mount = {0.0f, 0.081875f, 0.0f}; pc.camera_mount = {0, 0, 0};
+	pc.lidar_mount = {0.0f, 0.0f, 0.0f}; pc.camera_mount = {0, 0, 0};
 	obstacle_challenge::ObstacleConfig oc;
 	camera::CameraModule camera(640, 640, 90.0f, 1.8f, 2.8f);
 	camera::CameraProcessor camera_processor;
@@ -110,7 +111,8 @@ int main() {
 		sfe_otos_pose2d_t p{}, velocity{}, acceleration{};
 		if (otos.getPosVelAcc(p, velocity, acceleration) != ksfTkErrOk) break;
 		const navigation::MapPose pose{p.x, p.y, p.h};
-		const auto lidar_data = open_challenge::process_scan(lidar_processor, scan, 0.0f);
+		const auto lidar_data = open_challenge::process_scan(
+			lidar_processor, scan, lidar::ScanMotion{});
 		TimedFrameData frame; camera::ProcessedCameraData camera_data; cv::Mat camera_view;
 		if (camera.get_latest(frame) && !frame.frame.empty()) {
 			camera_data = camera_processor.process(frame); camera_view = frame.frame.clone();

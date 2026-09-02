@@ -34,6 +34,7 @@ target_link_libraries(obstacle_challenge_main2 PRIVATE
     perception
     navigation
     otos
+    logging
 )
 
 set_target_properties(obstacle_challenge_main PROPERTIES

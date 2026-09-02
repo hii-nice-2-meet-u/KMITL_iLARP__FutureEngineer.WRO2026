@@ -1,12 +1,11 @@
-# Hardware checks — two frame conventions the source cannot settle
+# Hardware checks — frame conventions and mount results
 
-The audit found two **confirmed disagreements** between code and documentation
-that are currently self-consistent, so neither is visibly breaking the robot.
-Changing either from source reading alone is more likely to break a working
-robot than to fix it. Both need ten minutes with the assembled robot.
+The audit found two disagreements between code and documentation. Check 1 is
+now resolved from the assembled robot and datasheet convention; Check 2 still
+needs a short physical test before changing any world-frame transform.
 
-Fill in the **Result** line at the bottom of each check and report back.
-Until then, `docs/FIX_PLAN_DRIVE_AND_LOGGING.md` §10 forbids acting on F-07/F-08.
+Check 1 (M-1) has now been resolved from the assembled-robot observation below.
+Check 2 remains open until the OTOS world-axis push test is performed.
 
 ---
 
@@ -42,19 +41,16 @@ source cannot tell which.
    ```
 4. On the rendered view, find the drawn robot origin and the fitted wall.
 
-### What to record
+### Result (M-1 — recorded)
 
-- [ ] The wall appears **in front of** the origin (+Y) → the negation is a
-      correct mount compensation. **Action: the code is right, update
-      `mark.txt` and `docs/lidar/README.md` to document the mount.**
-- [ ] The wall appears **behind** the origin (−Y) → the negation is a bug.
-      **Action: remove the two minus signs, then re-run this check.**
+The raw-zero arrow points to the **rear of the robot**. Therefore the physical
+front is raw 180°. With the current code's two minus signs, raw 180° maps to
+`(x, y) = (0, +distance)`, so the robot frame remains **+Y forward**. The
+forward translation term in deskew (`dy = v * dt`) has the correct sign.
 
-Also note which physical direction the LiDAR's raw-zero mark points:
-`________________________`
-
-**Result:** _______________________________________________
-**Date / who ran it:** ____________________________________
+**Result:** PASS — P-22 may enable deskew; do not change `polar2cartesian()`.
+The minus signs are the documented 180° mount compensation.
+**Date / who ran it:** recorded from team/datasheet confirmation, 2026-09-02
 
 ---
 

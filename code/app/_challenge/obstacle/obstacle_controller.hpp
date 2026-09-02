@@ -6,10 +6,17 @@
 
 #include "navigation_controller.hpp"
 #include "perception.hpp"
+#include "kinematics.hpp"
 
 namespace obstacle_challenge {
 
 struct ObstacleConfig {
+	// Copied from the obstacle navigation baseline so avoidance curvature uses
+	// the same vehicle model as wall following.
+	float wheelbase_m{0.16375f};
+	float curvature_gain{1.3f};
+	float maximum_combined_steering_rad{
+		42.0f * 3.14159265358979323846f / 180.0f};
 	float activation_distance_m{1.50f};
 	float release_forward_m{-0.10f};
 	float pass_clearance_m{0.32f};
@@ -124,16 +131,27 @@ class ObstacleController {
 			std::atan2(status.target_right_m, lookahead_m),
 			-config_.maximum_avoidance_steering_rad,
 			config_.maximum_avoidance_steering_rad);
+		kinematics::BicycleModel model;
+		model.wheelbase_m = config_.wheelbase_m;
+		model.curvature_gain = config_.curvature_gain;
+		const float avoidance_curvature = model.curvature_for_steering(
+			avoidance_steering_rad);
 		if (relative.forward_m <= config_.emergency_distance_m) {
-			command.steering_rad = side * std::max(0.0f,
-				config_.emergency_steering_rad);
+			const float emergency_curvature = model.curvature_for_steering(
+				side * std::max(0.0f, config_.emergency_steering_rad));
+			command.curvature_1pm += emergency_curvature;
 			command.target_speed_mps = std::min(command.target_speed_mps,
 				config_.emergency_speed_mps);
 		} else {
-			command.steering_rad = avoidance_steering_rad;
+			command.curvature_1pm += avoidance_curvature;
 			command.target_speed_mps = std::min(command.target_speed_mps,
 				config_.avoidance_speed_mps);
 		}
+		command.curvature_1pm = std::clamp(command.curvature_1pm,
+			-model.max_curvature(config_.maximum_combined_steering_rad),
+			model.max_curvature(config_.maximum_combined_steering_rad));
+		command.steering_rad = model.steering_for_curvature(
+			command.curvature_1pm);
 		status.steering_rad = command.steering_rad;
 		return status;
 	}
