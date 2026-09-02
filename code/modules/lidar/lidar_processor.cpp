@@ -15,7 +15,8 @@ ProcessedLidarData LidarProcessor::process(
 	float max_point_gap_m,
 	float max_angle_diff,
 	float max_collinear_error_m,
-	float max_segment_gap_m) const {
+	float max_segment_gap_m,
+	const ScanMotion &motion) const {
 
 	ProcessedLidarData result;
 	result.timestamp_us = data.timestamp_us;
@@ -23,7 +24,7 @@ ProcessedLidarData LidarProcessor::process(
 	std::vector<CartesianPoint> points;
 	points.reserve(data.points.size());
 
-	// Raw LiDAR -> Cartesian
+	// Raw LiDAR -> Cartesian (-> deskew, only when motion is valid)
 	result.reject_stats.total = data.points.size();
 	for (const auto &point : data.points) {
 
@@ -37,8 +38,11 @@ ProcessedLidarData LidarProcessor::process(
 			continue;
 		}
 
-		points.push_back(
-			polar2cartesian(point));
+		CartesianPoint cartesian = polar2cartesian(point);
+		if (motion.valid) {
+			cartesian = deskew(cartesian, point.scan_phase, motion);
+		}
+		points.push_back(cartesian);
 	}
 
 	if (points.empty()) {
@@ -151,6 +155,68 @@ CartesianPoint LidarProcessor::polar2cartesian(const LidarPoint &point) const {
 	result.x_m = point.distance_m * -std::sin(rad);
 	result.y_m = point.distance_m * -std::cos(rad);
 
+	return result;
+}
+
+// Motion-deskew one point. A sample taken at fraction `scan_phase` of the
+// revolution was captured Dt = (1 - phase) * period before scan end. Over that
+// interval the body advances by a constant twist (forward speed along +Y, yaw
+// rate w). Expressing the point in the scan-end frame undoes that motion:
+//
+//     theta = -w * Dt                     rotation into the scan-end frame
+//     d     = exact SE(2) displacement of the body origin over Dt, in the
+//             sample-time frame, for the constant twist (0, v, w)
+//     p_end = R(theta) * (p - d)
+//
+// The exact displacement for velocity v_vec = (0, v) and yaw rate w is
+//     d = (1/w) * [[ sin(wDt),      -(1 - cos(wDt)) ],
+//                  [ (1 - cos(wDt)),  sin(wDt)       ]] * v_vec
+// which tends to v_vec * Dt as w -> 0; the straight-line limit is used below
+// |w| < 1e-3 to avoid the 1/w singularity. The chord-vs-arc error of the
+// straight-line shortcut is <= 0.5 * |w| * |v| * Dt^2 (0.53 mm at v=0.42,
+// w=1.0, Dt=0.05), so the exact form is only material at large yaw rates but
+// costs nothing to keep.
+//
+// WARNING: the forward axis is taken as robot +Y. If HARDWARE_CHECKS.md Check 1
+// (M-1) shows the LiDAR frame's forward axis is inverted, the sign of v here is
+// wrong and deskew doubles the error. Enabling deskew (setting ScanMotion.valid)
+// is gated on that check.
+CartesianPoint LidarProcessor::deskew(const CartesianPoint &point,
+	float scan_phase, const ScanMotion &motion) const {
+	const float clamped_phase = std::clamp(scan_phase, 0.0f, 1.0f);
+	const float dt_s = (1.0f - clamped_phase) * motion.scan_period_s;
+	if (dt_s <= 0.0f) {
+		return point;
+	}
+
+	const float w = motion.yaw_rate_rps;
+	const float v = motion.forward_speed_mps;
+
+	float dx = 0.0f;
+	float dy = 0.0f;
+	if (std::abs(w) < 1.0e-3f) {
+		// Straight-line limit: displacement is v * dt along +Y.
+		dy = v * dt_s;
+	} else {
+		const float a = w * dt_s;
+		const float s = std::sin(a);
+		const float c = std::cos(a);
+		// v_vec = (0, v): only the second column of the SE(2) matrix survives.
+		dx = -(1.0f - c) / w * v;
+		dy = s / w * v;
+	}
+
+	const float px = point.x_m - dx;
+	const float py = point.y_m - dy;
+
+	const float theta = -w * dt_s;
+	const float ct = std::cos(theta);
+	const float st = std::sin(theta);
+
+	CartesianPoint result;
+	result.x_m = ct * px - st * py;
+	result.y_m = st * px + ct * py;
+	result.distance_m = std::hypot(result.x_m, result.y_m);
 	return result;
 }
 

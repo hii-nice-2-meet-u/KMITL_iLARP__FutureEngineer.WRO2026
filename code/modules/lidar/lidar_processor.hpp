@@ -20,6 +20,22 @@ struct CartesianPoint {
 	float distance_m; // in meter
 };
 
+// Vehicle motion across one scan window, used to undo LiDAR motion distortion.
+// Passed into process() by value so the processor stays a pure function of its
+// inputs (unlike heading_error_rad, which injects a controller quantity).
+//
+// Deskew is applied per point only when `valid` is true. Nothing sets it true
+// yet: enabling deskew is gated on HARDWARE_CHECKS.md Check 1 (M-1), because the
+// forward-translation term is subtracted along the LiDAR frame's forward axis
+// and, if that axis is 180 deg from what this code assumes, deskew doubles the
+// error instead of removing it.
+struct ScanMotion {
+	float forward_speed_mps{0.0f}; // signed; forward positive, robot +Y
+	float yaw_rate_rps{0.0f};	   // OTOS convention (+ = CCW)
+	float scan_period_s{0.05f};	   // measured revolution time, not assumed
+	bool valid{false};
+};
+
 struct LineSegment {
 	cv::Point2f start;
 	cv::Point2f end;
@@ -98,7 +114,16 @@ class LidarProcessor {
 		float heading_error_rad = 0.0f, std::size_t min_segment_point = 5,
 		float max_line_error_m = 0.035f, float max_point_gap_m = 0.10f,
 		float max_angle_diff = 3.0f, float max_collinear_error_m = 0.03f,
-		float max_segment_gap_m = 0.05f) const;
+		float max_segment_gap_m = 0.05f,
+		const ScanMotion &motion = ScanMotion{}) const;
+
+	// Express a point measured mid-scan (at fraction `scan_phase` of the
+	// revolution) in the robot frame as it was at scan end, undoing the body's
+	// motion since that sample. Exact SE(2) for a constant twist; see the .cpp
+	// for the derivation and the error bound. Public so it can be unit-tested
+	// in isolation.
+	CartesianPoint deskew(const CartesianPoint &point, float scan_phase,
+		const ScanMotion &motion) const;
 
 	void draw_segment(
 		cv::Mat &img, const LineSegment &segment, float scale_px_per_m) const;

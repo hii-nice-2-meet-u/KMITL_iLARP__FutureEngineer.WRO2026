@@ -76,6 +76,20 @@ add_test(NAME servo_pulse_test
 
 install(TARGETS servo_pulse_test DESTINATION tests)
 
+add_executable(lidar_deskew_test
+    lidar_deskew_test.cpp
+)
+
+target_link_libraries(lidar_deskew_test PRIVATE
+    lidar_processor
+)
+
+add_test(NAME lidar_deskew_test
+    COMMAND lidar_deskew_test
+)
+
+install(TARGETS lidar_deskew_test DESTINATION tests)
+
 add_executable(perception_fusion_test
     perception_fusion_test.cpp
 )
