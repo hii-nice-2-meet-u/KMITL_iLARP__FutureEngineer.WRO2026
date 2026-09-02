@@ -1267,8 +1267,8 @@ float NavigationController::calculate_search_steering(
 
 float NavigationController::clamp_steering(float steering_rad) const {
 
-	return std::clamp(steering_rad, -config_.stanley.max_steering_rad,
-		config_.stanley.max_steering_rad);
+	return std::clamp(steering_rad, -config_.max_steering_rad,
+		config_.max_steering_rad);
 }
 
 float NavigationController::normalize_angle(float angle_rad) {

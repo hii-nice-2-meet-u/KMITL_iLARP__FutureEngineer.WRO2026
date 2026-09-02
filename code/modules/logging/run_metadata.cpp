@@ -184,6 +184,7 @@ JsonObject navigation_config_json(const navigation::NavigationConfig &config) {
 	object.add_number("target_outer_distance_m", config.target_outer_distance_m)
 		.add_bool("follow_corridor_center", config.follow_corridor_center)
 		.add_object("stanley", stanley_config_json(config.stanley))
+		.add_number("max_steering_rad", config.max_steering_rad)
 		.add_number("search_center_kp", config.search_center_kp)
 		.add_bool(
 			"search_preserve_initial_offset", config.search_preserve_initial_offset)

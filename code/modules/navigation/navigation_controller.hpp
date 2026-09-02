@@ -19,6 +19,13 @@ struct NavigationConfig {
 
 	control::StanleyConfig stanley{};
 
+	// Mode-independent steering saturation. clamp_steering() enforces this in
+	// SEARCH, TURNING, and the final command conditioning -- none of which
+	// involve the Stanley controller -- so it must not be scoped to
+	// StanleyConfig (audit F-11). Defaults to the same 38 deg the Stanley limit
+	// used, so behaviour is unchanged until it is tuned independently.
+	float max_steering_rad{38.0f * 3.14159265358979323846f / 180.0f};
+
 	// Center robot while direction is unknown.
 	float search_center_kp{1.5f};
 	bool search_preserve_initial_offset{false};

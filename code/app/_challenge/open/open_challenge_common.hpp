@@ -121,6 +121,9 @@ inline navigation::NavigationConfig make_navigation_config() {
 	// Corridor-following steering controller
 	config.stanley.k = 1.00f;
 	config.stanley.max_steering_rad = 38.0f * PI / 180.0f;
+	// Mode-independent steering clamp (F-11). Kept equal to the Stanley limit
+	// so today's behaviour is unchanged; tune independently if needed.
+	config.max_steering_rad = 38.0f * PI / 180.0f;
 	config.stanley.heading_pid.kp = 1.00f;
 	config.stanley.heading_pid.ki = 0.08f;
 	config.stanley.heading_pid.kd = 0.075f;

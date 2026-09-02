@@ -224,6 +224,9 @@ void run_corner_simulation(
 	config.stanley.k = 0.85f;
 	config.stanley.softening_speed_mps = 0.30f;
 	config.stanley.max_steering_rad = 30.0f * DEG_TO_RAD;
+	// clamp_steering() now reads NavigationConfig::max_steering_rad rather than
+	// the Stanley limit (F-11); mirror the intended global clamp here.
+	config.max_steering_rad = 30.0f * DEG_TO_RAD;
 	config.approach_distance_m = 0.90f;
 	config.turn_trigger_distance_m = 0.50f;
 	config.turn_preview_time_s = 0.10f;
