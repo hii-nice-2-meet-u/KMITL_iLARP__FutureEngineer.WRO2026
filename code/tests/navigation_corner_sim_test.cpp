@@ -7,12 +7,37 @@
 #include <string>
 
 #include "navigation_controller.hpp"
+#include "servo_pulse.hpp"
 
 namespace {
 
 constexpr float PI = 3.14159265358979323846f;
 constexpr float DEG_TO_RAD = PI / 180.0f;
 constexpr float DT_S = 0.05f;
+
+// When --dump-pulses is passed, every commanded steering value is pushed
+// through the shared actuator pulse arithmetic and the resulting servo-pulse
+// sequence is printed, one integer per line. This is the fingerprint the
+// pulse-identical verification bar compares across a refactor: the internal
+// representation may change to curvature, but this sequence must not.
+bool g_dump_pulses = false;
+
+// Tracks the conditioned pulse across a run exactly as the actuator does,
+// starting from the centre pulse and slew-limiting each step.
+struct PulseFingerprint {
+	actuator::ServoPulseConfig config{};
+	std::uint16_t current_pulse_us{config.servo_center_pulse_us};
+
+	void push(float steering_rad) {
+		const std::uint16_t target =
+			actuator::to_servo_pulse_us(config, steering_rad);
+		current_pulse_us = actuator::limit_servo_pulse_step(
+			config, target, current_pulse_us);
+		if (g_dump_pulses) {
+			std::cout << current_pulse_us << '\n';
+		}
+	}
+};
 
 [[noreturn]] void fail(const std::string &message) {
 	std::cerr << "FAIL: " << message << '\n';
@@ -233,9 +258,11 @@ void run_corner_simulation(
 	float vehicle_speed_mps = initial_speed_mps;
 	float previous_steering_rad = 0.0f;
 	std::uint64_t timestamp_us = 1'000'000;
+	PulseFingerprint pulses;
 
 	auto frame = make_direction_frame(direction, 0.54f, timestamp_us);
 	auto result = controller.update(frame, heading_rad, vehicle_speed_mps);
+	pulses.push(result.command.steering_rad);
 
 	expect(controller.state().direction == std::optional(direction),
 		"initial direction estimator did not lock to the synthetic corner");
@@ -269,6 +296,7 @@ void run_corner_simulation(
 		}
 
 		result = controller.update(frame, heading_rad, vehicle_speed_mps);
+		pulses.push(result.command.steering_rad);
 
 		if (controller.state().mode == navigation::NavigationMode::TURNING) {
 			entered_turn = true;
@@ -342,6 +370,9 @@ void run_corner_simulation(
 			5.0f * DEG_TO_RAD,
 		"final heading error exceeded five degrees");
 
+	if (g_dump_pulses) {
+		return;
+	}
 	std::cout << (direction == DrivingDirection::CLOCKWISE ? "CW" : "CCW")
 			  << " from " << initial_speed_mps << " m/s: turn converged in "
 			  << completion_step * DT_S << " s, peak steering "
@@ -355,7 +386,15 @@ void run_corner_simulation(
 
 } // namespace
 
-int main() {
+int main(int argc, char **argv) {
+	for (int i = 1; i < argc; ++i) {
+		if (std::string(argv[i]) == "--dump-pulses") {
+			g_dump_pulses = true;
+		}
+	}
+
+	// In dump mode, emit only the deterministic pulse fingerprint of the
+	// driving loops (no prose), so two builds can be compared byte-for-byte.
 	test_world_stable_inner_corner_trigger();
 	test_corridor_center_cross_track_error();
 
@@ -365,6 +404,8 @@ int main() {
 			DrivingDirection::COUNTER_CLOCKWISE, initial_speed_mps);
 	}
 
-	std::cout << "PASS: smooth high-speed CW and CCW corner simulations\n";
+	if (!g_dump_pulses) {
+		std::cout << "PASS: smooth high-speed CW and CCW corner simulations\n";
+	}
 	return 0;
 }

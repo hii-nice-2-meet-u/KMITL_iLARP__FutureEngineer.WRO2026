@@ -6,6 +6,10 @@ target_link_libraries(navigation_corner_sim_test PRIVATE
     navigation
 )
 
+target_include_directories(navigation_corner_sim_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../common
+)
+
 add_test(NAME navigation_corner_sim_test
     COMMAND navigation_corner_sim_test
 )
@@ -18,6 +22,10 @@ add_executable(navigation_heading_hold_test
 
 target_link_libraries(navigation_heading_hold_test PRIVATE
     navigation
+)
+
+target_include_directories(navigation_heading_hold_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../common
 )
 
 add_test(NAME navigation_heading_hold_test
@@ -53,6 +61,20 @@ add_test(NAME kinematics_test
 )
 
 install(TARGETS kinematics_test DESTINATION tests)
+
+add_executable(servo_pulse_test
+    servo_pulse_test.cpp
+)
+
+target_include_directories(servo_pulse_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../common
+)
+
+add_test(NAME servo_pulse_test
+    COMMAND servo_pulse_test
+)
+
+install(TARGETS servo_pulse_test DESTINATION tests)
 
 add_executable(perception_fusion_test
     perception_fusion_test.cpp

@@ -6,8 +6,14 @@
 #include <string>
 
 #include "navigation_controller.hpp"
+#include "servo_pulse.hpp"
 
 namespace {
+
+// See navigation_corner_sim_test.cpp for the rationale. This test exercises the
+// lost-wall / heading-hold steering path the corner sim does not reach, so its
+// pulse fingerprint is a complementary part of the pulse-identical bar.
+bool g_dump_pulses = false;
 
 constexpr float PI = 3.14159265358979323846f;
 constexpr float DEG_TO_RAD = PI / 180.0f;
@@ -85,8 +91,20 @@ void test_temporary_wall_loss_holds_otos_heading() {
 	navigation::NavigationController controller(config, direction_config);
 	std::uint64_t timestamp_us = 1'000'000;
 
+	actuator::ServoPulseConfig pulse_config{};
+	std::uint16_t current_pulse_us = pulse_config.servo_center_pulse_us;
+	auto dump = [&](float steering_rad) {
+		current_pulse_us = actuator::limit_servo_pulse_step(pulse_config,
+			actuator::to_servo_pulse_us(pulse_config, steering_rad),
+			current_pulse_us);
+		if (g_dump_pulses) {
+			std::cout << current_pulse_us << '\n';
+		}
+	};
+
 	auto result =
 		controller.update(make_clockwise_wall_frame(timestamp_us), 0.0f, 0.40f);
+	dump(result.command.steering_rad);
 	expect(controller.state().direction ==
 			std::optional(DrivingDirection::CLOCKWISE),
 		"direction estimator did not lock to CW");
@@ -97,6 +115,7 @@ void test_temporary_wall_loss_holds_otos_heading() {
 	timestamp_us += 50'000;
 	result =
 		controller.update(make_clockwise_wall_frame(timestamp_us), 0.0f, 0.40f);
+	dump(result.command.steering_rad);
 	expect(
 		result.debug.outer_wall_valid, "synthetic outer wall was not accepted");
 
@@ -106,6 +125,7 @@ void test_temporary_wall_loss_holds_otos_heading() {
 	timestamp_us += 200'000;
 	result = controller.update(
 		make_wall_lost_frame(timestamp_us), 6.0f * DEG_TO_RAD, 0.40f);
+	dump(result.command.steering_rad);
 	expect(result.debug.heading_hold_active,
 		"heading hold was not active during a short wall loss");
 	expect(!result.debug.outer_wall_valid,
@@ -121,6 +141,7 @@ void test_temporary_wall_loss_holds_otos_heading() {
 	timestamp_us += 150'000;
 	result = controller.update(
 		make_wall_lost_frame(timestamp_us), 6.0f * DEG_TO_RAD, 0.40f);
+	dump(result.command.steering_rad);
 	expect(!result.debug.heading_hold_active,
 		"heading hold remained active after its timeout");
 	expect_near(result.command.steering_rad, 0.0f, 1e-6f,
@@ -133,8 +154,15 @@ void test_temporary_wall_loss_holds_otos_heading() {
 
 } // namespace
 
-int main() {
+int main(int argc, char **argv) {
+	for (int i = 1; i < argc; ++i) {
+		if (std::string(argv[i]) == "--dump-pulses") {
+			g_dump_pulses = true;
+		}
+	}
 	test_temporary_wall_loss_holds_otos_heading();
-	std::cout << "PASS: OTOS heading hold and lost-wall timeout\n";
+	if (!g_dump_pulses) {
+		std::cout << "PASS: OTOS heading hold and lost-wall timeout\n";
+	}
 	return 0;
 }

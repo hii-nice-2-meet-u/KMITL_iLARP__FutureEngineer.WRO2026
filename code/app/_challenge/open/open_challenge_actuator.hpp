@@ -9,6 +9,7 @@
 
 #include "navigation_state.hpp"
 #include "run_metadata.hpp"
+#include "servo_pulse.hpp"
 #include "spi_master.hpp"
 
 namespace open_challenge {
@@ -211,42 +212,22 @@ class ActuatorOutput {
 			std::clamp<std::int32_t>(rpm, -maximum_rpm, maximum_rpm));
 	}
 
+	// Both conversions delegate to the shared, test-pinned arithmetic in
+	// common/servo_pulse.hpp so the sim tests exercise the exact same mapping.
+	actuator::ServoPulseConfig servo_pulse_config() const {
+		return {config_.servo_min_pulse_us, config_.servo_center_pulse_us,
+			config_.servo_max_pulse_us, config_.maximum_servo_step_us,
+			config_.steering_to_servo_sign,
+			config_.maximum_steering_command_deg};
+	}
+
 	std::uint16_t to_servo_pulse_us(float steering_rad) const {
-		const float maximum_steering_command_deg =
-			std::max(0.1f, std::abs(config_.maximum_steering_command_deg));
-		const float steering_deg = std::clamp(std::isfinite(steering_rad)
-				? steering_rad * 180.0f / 3.14159265358979323846f
-				: 0.0f,
-			-maximum_steering_command_deg, maximum_steering_command_deg);
-		const float signed_command_deg =
-			std::clamp(config_.steering_to_servo_sign * steering_deg,
-				-maximum_steering_command_deg, maximum_steering_command_deg);
-		const float minimum_pulse_us = static_cast<float>(
-			std::min(config_.servo_min_pulse_us, config_.servo_max_pulse_us));
-		const float maximum_pulse_us = static_cast<float>(
-			std::max(config_.servo_min_pulse_us, config_.servo_max_pulse_us));
-		const float center_pulse_us = std::clamp(
-			static_cast<float>(config_.servo_center_pulse_us), minimum_pulse_us,
-			maximum_pulse_us);
-		const float normalized_command =
-			signed_command_deg / maximum_steering_command_deg;
-		const float pulse_span_us = normalized_command >= 0.0f
-			? maximum_pulse_us - center_pulse_us
-			: center_pulse_us - minimum_pulse_us;
-		const float pulse_us =
-			center_pulse_us + normalized_command * pulse_span_us;
-		return static_cast<std::uint16_t>(
-			std::lround(std::clamp(pulse_us, minimum_pulse_us, maximum_pulse_us)));
+		return actuator::to_servo_pulse_us(servo_pulse_config(), steering_rad);
 	}
 
 	std::uint16_t limit_servo_pulse_step(std::uint16_t target_pulse_us) const {
-		const std::int32_t current_pulse_us = telemetry_.servo_pulse_us;
-		const std::int32_t maximum_step_us =
-			std::max<std::int32_t>(1, config_.maximum_servo_step_us);
-		const std::int32_t pulse_error_us =
-			static_cast<std::int32_t>(target_pulse_us) - current_pulse_us;
-		return static_cast<std::uint16_t>(current_pulse_us +
-			std::clamp(pulse_error_us, -maximum_step_us, maximum_step_us));
+		return actuator::limit_servo_pulse_step(
+			servo_pulse_config(), target_pulse_us, telemetry_.servo_pulse_us);
 	}
 
 	bool write_motor_rpm(std::int16_t rpm) {
