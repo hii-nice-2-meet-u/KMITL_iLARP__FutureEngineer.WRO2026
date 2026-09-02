@@ -17,6 +17,11 @@
 | P-03 | `9e015fe` | delete `speed_pid` / `target_acceleration_mps2` (F-09) | pulse-identical + field count 93=93 |
 | P-21b | `70e46f3` | `NavigationConfig::max_steering_rad` (F-11) | pulse-identical |
 | P-20 | `a3bf503` | per-point `scan_phase` + `scan_period_us` | build; field unread |
+| (log) | `f11b581` | record the 6 `LidarProcessor::process` thresholds in `run_meta.json` | build; values unchanged |
+| P-21 | `b18201b` | motion `deskew()` transform + `ScanMotion`, **flag-off** | 6-property unit test; pulse-identical |
+
+**Full config surface is now recorded per run** — see `docs/TUNING_VARIABLES.md`.
+Every tuning group appears in `run_meta.json`.
 
 ## The verification harness (how to prove pulse-identity)
 
@@ -46,12 +51,23 @@ baseline.
 
 ## Next, and why it stops here
 
-The next task is **P-21** (deskew transform, flag-off) — the head of the
-perception chain P-21 → P-22 → P-23. Its payoff (P-22, enabling deskew) is
-gated on **M-1** (`HARDWARE_CHECKS.md` Check 1: the LiDAR raw-zero axis). With
-the wrong sign, deskew doubles the error instead of removing it. So the deskew
-code can be written now (flag-off, unit-tested) but not proven useful without
-hardware.
+P-21 is landed (deskew code, flag-off, unit-tested). What remains splits into
+three, and none is a clean "land it now with proof":
+
+- **P-22** (enable deskew, drop `wall_correction_rad`) — gated on **M-1**.
+  Wrong LiDAR-zero sign ⇒ deskew doubles the error. Cannot enable without it.
+- **P-25** (robust Huber line fit, F-14 root cause) — *not* gated, but it is a
+  **LiDAR-geometry behaviour change**: its acceptance evidence is
+  "`outer_wall_valid` duty cycle rises" on a real/replayed log, which needs a
+  run. Implementable + unit-testable now; not field-validatable here.
+- **P-23 / P-26** (adaptive breakpoint / geometric weighting) — gated on
+  **M-11** (`σ_r`, incidence-dependent).
+- **P-32 / P-33** (offline Python: plausibility asserts, identifiability
+  report) — zero robot risk, unblocked, a context switch into tooling.
+- **P-04 / P-05 / Track D (P-10…P-14)** — deferred / M-4-gated (see below).
+
+So the decision at this point is: land P-25 unvalidated, do the offline tooling,
+or pause for the measurement programme.
 
 Everything further is gated on the ~90-minute measurement programme
 (`MOTION_MODEL_UNIFIED_PLAN.md` §2.2 / `MOTION_CORE_AND_PATCH_PLAN.md` PART 5):
