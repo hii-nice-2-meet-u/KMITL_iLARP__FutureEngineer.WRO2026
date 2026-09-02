@@ -40,6 +40,20 @@ add_test(NAME track_map_test
 
 install(TARGETS track_map_test DESTINATION tests)
 
+add_executable(kinematics_test
+    kinematics_test.cpp
+)
+
+target_include_directories(kinematics_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../common
+)
+
+add_test(NAME kinematics_test
+    COMMAND kinematics_test
+)
+
+install(TARGETS kinematics_test DESTINATION tests)
+
 add_executable(perception_fusion_test
     perception_fusion_test.cpp
 )
