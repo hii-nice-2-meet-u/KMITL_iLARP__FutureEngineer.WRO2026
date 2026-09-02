@@ -26,9 +26,16 @@ A reusable PID with the safety features a real control loop needs:
 `PIDConfig` fields: `kp, ki, kd, min_output, max_output, min_integral,
 max_integral, max_dt_s`.
 
-The navigation layer instantiates PID three times, with different gains, for:
-heading hold during a corner (`turn_heading_pid`), speed→acceleration
-(`speed_pid`), and inside the Stanley controller (`heading_pid`).
+The navigation layer instantiates PID **twice**, with different gains, for:
+heading hold during a corner (`turn_heading_pid`) and inside the Stanley
+controller (`heading_pid`).
+
+> A third instance, `speed_pid` (speed→acceleration), was removed. Its output
+> reached no actuator: `ActuatorOutput::apply()` converts `target_speed_mps`
+> straight to a motor-RPM command, and the STM32 runs its own closed speed
+> loop, so the Pi-side acceleration request was dead code (audit finding F-09).
+> Speed on the Pi side is shaped only by the `max_acceleration_mps2` /
+> `max_deceleration_mps2` rate limits in `condition_command()`.
 
 ---
 

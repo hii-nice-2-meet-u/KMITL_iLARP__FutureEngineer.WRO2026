@@ -31,7 +31,6 @@ const char *telemetry_csv_header() {
 		   "turn_progress,turn_feedforward_rad,raw_steering_rad,"
 		   "raw_target_speed_mps,corner_speed_mps,replay_speed_factor,"
 		   "active_normal_speed_mps,active_approach_speed_mps,"
-		   "target_acceleration_mps2,"
 		   "effective_turn_trigger_m,update_dt_s,wall_corner_forward_m,"
 		   "wall_corner_lateral_m,wall_corner_stability_error_m,"
 		   "wall_corner_confirm_frames,wall_corner_candidate_valid,"
@@ -103,7 +102,6 @@ std::string to_csv_row(const TelemetryRow &row) {
 		   << row.raw_target_speed_mps << ',' << row.corner_speed_mps << ','
 		   << row.replay_speed_factor << ',' << row.active_normal_speed_mps << ','
 		   << row.active_approach_speed_mps << ','
-		   << row.target_acceleration_mps2 << ','
 		   << row.effective_turn_trigger_m << ',' << row.update_dt_s << ','
 		   << row.wall_corner_forward_m << ',' << row.wall_corner_lateral_m
 		   << ',' << row.wall_corner_stability_error_m << ','
@@ -240,7 +238,6 @@ TelemetryRow make_telemetry_row(std::uint64_t timestamp_us,
 	row.replay_speed_factor = result.debug.replay_speed_factor;
 	row.active_normal_speed_mps = result.debug.active_normal_speed_mps;
 	row.active_approach_speed_mps = result.debug.active_approach_speed_mps;
-	row.target_acceleration_mps2 = result.debug.target_acceleration_mps2;
 	row.effective_turn_trigger_m = result.debug.effective_turn_trigger_m;
 	row.update_dt_s = result.debug.update_dt_s;
 	row.wall_corner_forward_m = result.debug.wall_corner_forward_m;

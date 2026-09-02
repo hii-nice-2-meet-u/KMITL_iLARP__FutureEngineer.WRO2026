@@ -147,7 +147,6 @@ struct TelemetryRow {
 	float replay_speed_factor{1.0f};
 	float active_normal_speed_mps{0.0f};
 	float active_approach_speed_mps{0.0f};
-	float target_acceleration_mps2{0.0f};
 	float effective_turn_trigger_m{0.0f};
 	float update_dt_s{0.0f};
 	float wall_corner_forward_m{0.0f};

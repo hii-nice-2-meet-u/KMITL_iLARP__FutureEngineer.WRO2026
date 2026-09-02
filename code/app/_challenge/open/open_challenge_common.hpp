@@ -132,12 +132,6 @@ inline navigation::NavigationConfig make_navigation_config() {
 	config.turn_heading_pid.kd = 0.048f;
 
 	// ======
-	// Speed controller
-	config.speed_pid.kp = 4.0f;
-	config.speed_pid.ki = 1.0f;
-	config.speed_pid.kd = 0.04f;
-
-	// ======
 	// Course completion and inner-corner validation
 	config.total_turns = 12;
 	config.wall_corner_confirm_frames = 2;
@@ -184,7 +178,6 @@ inline void print_command(const navigation::NavigationResult &result,
 			  << " heading=" << heading_rad * RAD_TO_DEG << "deg"
 			  << " speed=" << measured_speed_mps << "m/s"
 			  << " target=" << result.command.target_speed_mps << "m/s"
-			  << " accel=" << result.command.target_acceleration_mps2 << "m/s2"
 			  << " steering=" << result.command.steering_rad * RAD_TO_DEG
 			  << "deg wheel_rpm=" << wheel_rpm << " pulse=" << servo_pulse_us
 			  << "us\n";

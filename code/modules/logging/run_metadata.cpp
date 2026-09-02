@@ -269,7 +269,6 @@ JsonObject navigation_config_json(const navigation::NavigationConfig &config) {
 			"max_steering_rate_rad_s", config.max_steering_rate_rad_s)
 		.add_number("max_acceleration_mps2", config.max_acceleration_mps2)
 		.add_number("max_deceleration_mps2", config.max_deceleration_mps2)
-		.add_object("speed_pid", pid_config_json(config.speed_pid))
 		.add_number(
 			"nominal_update_period_s", config.nominal_update_period_s)
 		.add_number("min_update_period_s", config.min_update_period_s)

@@ -585,9 +585,6 @@ void draw_debug_panel(cv::Mat &map, const lidar::ProcessedLidarData &processed,
 			"   NORMAL " + fixed(nav.debug.active_normal_speed_mps, 2) +
 			"   APPROACH " + fixed(nav.debug.active_approach_speed_mps, 2),
 		cyan);
-	text("SPEED PID ACCEL " + fixed(nav.command.target_acceleration_mps2, 2) +
-			" m/s2",
-		cyan);
 	text("MOTOR OUTPUT OFF", dim);
 
 	section("LIDAR / WALL FOLLOWING");
@@ -668,9 +665,6 @@ int main() {
 	nav_config.turn_heading_pid.ki = 0.08f;
 	nav_config.turn_heading_pid.kd = 0.020f;
 
-	nav_config.speed_pid.kp = 3.50f;
-	nav_config.speed_pid.ki = 0.80f;
-	nav_config.speed_pid.kd = 0.170f;
 
 	nav_config.turn_trigger_distance_m = 0.85f;
 	nav_config.use_wall_corner_trigger = true;

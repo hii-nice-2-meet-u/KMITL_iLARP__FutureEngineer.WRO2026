@@ -8,8 +8,7 @@ namespace navigation {
 NavigationController::NavigationController(
 	NavigationConfig config, InitialDirectionConfig direction_config)
 	: config_(config), direction_estimator_(direction_config),
-	  stanley_(config.stanley), turn_heading_pid_(config.turn_heading_pid),
-	  speed_pid_(config.speed_pid) {
+	  stanley_(config.stanley), turn_heading_pid_(config.turn_heading_pid) {
 	model_.wheelbase_m = config_.wheelbase_m;
 }
 
@@ -88,10 +87,8 @@ NavigationResult NavigationController::update(
 	result.command.curvature_1pm =
 		model_.curvature_for_steering(result.command.steering_rad);
 
-	result.command = condition_command(result.command, speed_mps, dt_s,
+	result.command = condition_command(result.command, dt_s,
 		state_.mode == NavigationMode::FINISHED);
-	result.debug.target_acceleration_mps2 =
-		result.command.target_acceleration_mps2;
 
 	return result;
 }
@@ -134,7 +131,6 @@ void NavigationController::reset(float heading_rad) {
 
 	stanley_.reset();
 	turn_heading_pid_.reset();
-	speed_pid_.reset();
 }
 
 // SEARCH DIRECTION
@@ -1169,18 +1165,16 @@ float NavigationController::calculate_dt_s(std::uint64_t timestamp_us) {
 }
 
 NavigationCommand NavigationController::condition_command(
-	const NavigationCommand &command, float measured_speed_mps, float dt_s,
-	bool stop_immediately) {
+	const NavigationCommand &command, float dt_s, bool stop_immediately) {
 	if (stop_immediately) {
 		conditioned_speed_mps_ = 0.0f;
 		conditioned_steering_rad_ = 0.0f;
 		command_conditioner_initialized_ = true;
-		speed_pid_.reset();
-		const float acceleration_mps2 = speed_pid_.calculate(0.0f,
-			std::isfinite(measured_speed_mps) ? std::abs(measured_speed_mps)
-											  : 0.0f,
-			dt_s);
-		return {0.0f, 0.0f, acceleration_mps2};
+		NavigationCommand stopped;
+		stopped.target_speed_mps = 0.0f;
+		stopped.steering_rad = 0.0f;
+		stopped.curvature_1pm = 0.0f;
+		return stopped;
 	}
 
 	if (!command_conditioner_initialized_) {
@@ -1224,13 +1218,12 @@ NavigationCommand NavigationController::condition_command(
 			-max_steering_delta_rad, max_steering_delta_rad);
 	conditioned_steering_rad_ = clamp_steering(conditioned_steering_rad_);
 
-	const float actual_speed_mps =
-		std::isfinite(measured_speed_mps) ? std::abs(measured_speed_mps) : 0.0f;
-	const float acceleration_mps2 =
-		speed_pid_.calculate(conditioned_speed_mps_, actual_speed_mps, dt_s);
-
-	return {
-		conditioned_speed_mps_, conditioned_steering_rad_, acceleration_mps2};
+	NavigationCommand conditioned;
+	conditioned.target_speed_mps = conditioned_speed_mps_;
+	conditioned.steering_rad = conditioned_steering_rad_;
+	conditioned.curvature_1pm =
+		model_.curvature_for_steering(conditioned_steering_rad_);
+	return conditioned;
 }
 
 float NavigationController::smoothstep(float value) {

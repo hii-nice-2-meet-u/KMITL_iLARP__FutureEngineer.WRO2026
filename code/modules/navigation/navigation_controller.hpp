@@ -171,11 +171,6 @@ struct NavigationConfig {
 	float max_acceleration_mps2{5.0f};
 	float max_deceleration_mps2{3.0f};
 
-	// Converts speed error (target - measured) into an acceleration request
-	// for the downstream motor controller.
-	control::PIDConfig speed_pid{
-		4.0f, 1.0f, 0.04f, -3.0f, 1.8f, -1.0f, 1.0f, 0.10f};
-
 	float nominal_update_period_s{0.05f};
 	float min_update_period_s{0.005f};
 	float max_update_period_s{0.12f};
@@ -277,7 +272,7 @@ class NavigationController {
 	float calculate_dt_s(std::uint64_t timestamp_us);
 
 	NavigationCommand condition_command(const NavigationCommand &command,
-		float measured_speed_mps, float dt_s, bool stop_immediately);
+		float dt_s, bool stop_immediately);
 
 	static float smoothstep(float value);
 
@@ -300,7 +295,6 @@ class NavigationController {
 
 	control::StanleyController stanley_;
 	control::PID turn_heading_pid_;
-	control::PID speed_pid_;
 
 	std::uint64_t previous_timestamp_us_{0};
 	float last_elapsed_update_s_{0.0f};
