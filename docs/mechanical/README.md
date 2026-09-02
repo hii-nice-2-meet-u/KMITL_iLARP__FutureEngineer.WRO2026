@@ -22,10 +22,14 @@ README:
 
 ## 2. Drivetrain
 
-A **rear differential drive** driven by a single DC gear-motor, with a
-purpose-built differential gearset:
+A **rear differential drive** driven by **two** N20 gear-motors mounted
+mirror-imaged onto a common input, feeding a purpose-built differential gearset:
 
-- **Motor:** N20 gear-motor (`CAD/Motor_N20.SLDPRT`).
+- **Motors:** two N20 gear-motors (`CAD/Motor_N20.SLDPRT`, instanced twice in
+  the assembly). The pair was adopted to supply drive torque the earlier
+  single-motor layout could not. Because they are mounted mirrored, their output
+  shafts turn in opposite directions for the same electrical command, and the
+  firmware accounts for the inversion; they are **not** one-motor-per-wheel.
 - **Differential:** custom-designed gearset in
   [`CAD/DifferentialGear`](../../../../CAD/DifferentialGear):
   - `DifferentialGear__RingGear.SLDPRT` + `...RingGearCap.SLDPRT`
@@ -35,6 +39,8 @@ purpose-built differential gearset:
 
 A differential lets the two driven wheels rotate at different speeds through a
 turn, avoiding the scrubbing and heading disturbance a locked axle would cause.
+The two motors join *before* the differential, at its input, so differential
+action between the left and right wheels is preserved.
 
 ---
 
