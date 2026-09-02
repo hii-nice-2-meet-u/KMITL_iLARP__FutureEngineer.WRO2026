@@ -43,8 +43,8 @@ class LidarModule {
 
 	void checkHealth();
 
-	void processScan(
-		const sl_lidar_response_measurement_node_hq_t *nodes, size_t count);
+	void processScan(const sl_lidar_response_measurement_node_hq_t *nodes,
+		size_t count, float start_angle_deg);
 
   private:
 	sl::ILidarDriver *lidar_driver_ = nullptr;
@@ -65,6 +65,9 @@ class LidarModule {
 
 	std::uint64_t data_sequence_{0};
 	std::uint64_t last_read_sequence_{0};
+
+	// Timestamp of the previous scan, for the measured revolution period.
+	std::uint64_t last_scan_timestamp_us_{0};
 };
 
 } // namespace lidar

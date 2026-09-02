@@ -137,7 +137,8 @@ void LidarModule::checkHealth() {
 }
 
 void LidarModule::processScan(
-	const sl_lidar_response_measurement_node_hq_t *nodes, size_t count) {
+	const sl_lidar_response_measurement_node_hq_t *nodes, size_t count,
+	float start_angle_deg) {
 
 	TimedLidarData data;
 	data.points.reserve(count);
@@ -151,12 +152,27 @@ void LidarModule::processScan(
 
 		point.quality = nodes[i].quality;
 
+		// Time-phase within the revolution, reconstructed from the angle swept
+		// since start_angle_deg (constant angular velocity). The buffer is now
+		// angle-sorted, so this is not the array index.
+		float swept_deg = point.angle_deg - start_angle_deg;
+		if (swept_deg < 0.0f) {
+			swept_deg += 360.0f;
+		}
+		point.scan_phase = swept_deg / 360.0f;
+
 		data.points.push_back(point);
 	}
 	const auto now = std::chrono::steady_clock::now().time_since_epoch();
 
 	data.timestamp_us =
 		std::chrono::duration_cast<std::chrono::microseconds>(now).count();
+
+	if (last_scan_timestamp_us_ != 0 &&
+		data.timestamp_us > last_scan_timestamp_us_) {
+		data.scan_period_us = data.timestamp_us - last_scan_timestamp_us_;
+	}
+	last_scan_timestamp_us_ = data.timestamp_us;
 
 	{
 		std::lock_guard<std::mutex> lock(data_mutex_);
@@ -185,10 +201,23 @@ void LidarModule::scan_loop() {
 		}
 
 		fail_count = 0;
+
+		// The raw buffer is in acquisition (temporal) order, so the first
+		// valid sample marks the start of the revolution. ascendScanData()
+		// sorts by angle below and destroys that order, so capture the start
+		// angle now to reconstruct each sample's time-phase afterwards.
+		float start_angle_deg = 0.0f;
+		for (size_t i = 0; i < count; ++i) {
+			if (nodes[i].dist_mm_q2 != 0) {
+				start_angle_deg = nodes[i].angle_z_q14 * 90.0f / (1 << 14);
+				break;
+			}
+		}
+
 		if (SL_IS_FAIL(lidar_driver_->ascendScanData(nodes, count))) {
 			continue;
 		}
-		processScan(nodes, count);
+		processScan(nodes, count, start_angle_deg);
 	}
 }
 
