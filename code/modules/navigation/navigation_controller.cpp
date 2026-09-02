@@ -9,7 +9,9 @@ NavigationController::NavigationController(
 	NavigationConfig config, InitialDirectionConfig direction_config)
 	: config_(config), direction_estimator_(direction_config),
 	  stanley_(config.stanley), turn_heading_pid_(config.turn_heading_pid),
-	  speed_pid_(config.speed_pid) {}
+	  speed_pid_(config.speed_pid) {
+	model_.wheelbase_m = config_.wheelbase_m;
+}
 
 // UPDATE
 
@@ -76,6 +78,15 @@ NavigationResult NavigationController::update(
 	result.debug.turn_heading_pid_integral = turn_heading_pid_.integral();
 	result.debug.turn_trigger_frames = turn_trigger_frames_;
 	result.debug.turn_armed = state_.turn_armed;
+
+	// Boundary of the delta->kappa migration: the mode handlers above still
+	// speak steering angle, so express that as curvature here. condition_command
+	// converts it back before the existing shaping. The round trip
+	// steering_for_curvature(curvature_for_steering(delta)) is atan(tan(delta))
+	// to float precision, four orders below the servo's integer-microsecond
+	// quantisation, so the emitted pulse is unchanged.
+	result.command.curvature_1pm =
+		model_.curvature_for_steering(result.command.steering_rad);
 
 	result.command = condition_command(result.command, speed_mps, dt_s,
 		state_.mode == NavigationMode::FINISHED);
@@ -1190,8 +1201,14 @@ NavigationCommand NavigationController::condition_command(
 	conditioned_speed_mps_ +=
 		std::clamp(speed_delta_mps, -max_speed_delta_mps, max_speed_delta_mps);
 
-	const float requested_steering_rad = std::isfinite(command.steering_rad)
-		? clamp_steering(command.steering_rad)
+	// Convert the curvature command back to a steering angle here -- this is the
+	// single point where kappa becomes delta. The existing shaping below is
+	// unchanged.
+	const float commanded_steering_rad =
+		model_.steering_for_curvature(command.curvature_1pm);
+	const float requested_steering_rad =
+		std::isfinite(commanded_steering_rad)
+		? clamp_steering(commanded_steering_rad)
 		: 0.0f;
 	const float time_constant_s =
 		std::max(0.0f, config_.steering_filter_time_constant_s);

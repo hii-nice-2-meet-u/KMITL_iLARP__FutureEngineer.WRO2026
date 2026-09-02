@@ -26,6 +26,13 @@ struct NavigationCommand {
 	float target_speed_mps{0.0f};
 	float steering_rad{0.0f};
 	float target_acceleration_mps2{0.0f};
+
+	// Path curvature [1/m]. Negative curves left, positive right, matching the
+	// steering sign. During the delta->kappa migration the controllers still
+	// compute steering_rad and set this from it at the boundary; the actuator
+	// conditioning converts it back. It is the same information as steering_rad
+	// expressed in the representation that superposes linearly.
+	float curvature_1pm{0.0f};
 };
 
 struct NavigationDebug {

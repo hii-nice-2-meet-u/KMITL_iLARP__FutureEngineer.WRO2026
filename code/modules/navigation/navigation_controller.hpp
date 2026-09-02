@@ -3,6 +3,7 @@
 #include <cstdint>
 
 #include "init_direction.hpp"
+#include "kinematics.hpp"
 #include "lidar_processor.hpp"
 #include "navigation_state.hpp"
 #include "pid.hpp"
@@ -289,6 +290,11 @@ class NavigationController {
   private:
 	NavigationConfig config_;
 	NavigationState state_;
+
+	// Single kinematic model for the whole controller. curvature_gain stays 1.0
+	// until the M-4 floor measurement; wheelbase mirrors the config so there is
+	// one source of truth.
+	kinematics::BicycleModel model_;
 
 	InitialDirectionEstimator direction_estimator_;
 
