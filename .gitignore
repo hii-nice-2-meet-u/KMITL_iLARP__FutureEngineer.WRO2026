@@ -9,3 +9,6 @@
 /compile_commands.json
 logs/
 code/build_n_deploy.sh
+
+# Python tooling bytecode
+__pycache__/
