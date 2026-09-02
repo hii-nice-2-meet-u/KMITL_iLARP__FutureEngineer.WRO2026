@@ -56,6 +56,11 @@ int main(int argc, char **argv) {
 	navigation::NavigationController navigation(navigation_config);
 	navigation::TrackMap track_map;
 	open_challenge::ActuatorConfig actuator_config;
+	// STM32 turns commanded RPM into ~1.75x the intended ground speed; pre-scale
+	// by 1/1.75 on the Pi. Back-calculated from a 1.60 logged speed ratio and
+	// the -8.7% OTOS under-report; refine with one straight run after applying
+	// the OTOS linear scalar (measure_otos_scale) and set scale = 1 / ratio.
+	actuator_config.motor_rpm_command_scale = 0.571f;
 	open_challenge::ActuatorOutput actuators(actuator_config);
 	const std::uint64_t search_launch_time_limit_us =
 		static_cast<std::uint64_t>(

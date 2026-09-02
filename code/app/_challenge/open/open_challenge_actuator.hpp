@@ -20,6 +20,16 @@ struct ActuatorConfig {
 	float wheel_diameter_m{0.053f};
 	std::uint16_t maximum_wheel_rpm{1500};
 
+	// Pi-side compensation for the STM32 RPM scale. The firmware turns a
+	// commanded RPM into ~1.75x the intended ground speed (measured: wheel is
+	// 53.5 mm so it is not the wheel; OTOS is off only -8.7% so it is not the
+	// sensor -- see docs/audit/HARDWARE_CHECKS.md and VEHICLE_MECHANICS_REVIEW).
+	// Pre-scaling the RPM command corrects the dominant gain without reflashing
+	// the STM32. A single scalar cannot remove the measured NORMAL(~1.86)/
+	// TURNING(~1.51) spread -- that low-speed nonlinearity needs the firmware or
+	// per-mode handling later. 1.0 = no compensation.
+	float motor_rpm_command_scale{1.0f};
+
 	std::uint16_t servo_min_pulse_us{950};
 	std::uint16_t servo_center_pulse_us{1475};
 	std::uint16_t servo_max_pulse_us{2000};
@@ -45,6 +55,8 @@ inline logging::JsonObject actuator_config_json(const ActuatorConfig &config) {
 		.add_unsigned("spi_speed_hz", config.spi_speed_hz)
 		.add_number("wheel_diameter_m", config.wheel_diameter_m)
 		.add_unsigned("maximum_wheel_rpm", config.maximum_wheel_rpm)
+		.add_number(
+			"motor_rpm_command_scale", config.motor_rpm_command_scale)
 		.add_unsigned("servo_min_pulse_us", config.servo_min_pulse_us)
 		.add_unsigned("servo_center_pulse_us", config.servo_center_pulse_us)
 		.add_unsigned("servo_max_pulse_us", config.servo_max_pulse_us)
@@ -173,8 +185,14 @@ class ActuatorOutput {
 		const float diameter_m = std::max(0.001f, config_.wheel_diameter_m);
 		const float speed_mps =
 			std::isfinite(target_speed_mps) ? target_speed_mps : 0.0f;
-		const float rpm =
-			speed_mps * 60.0f / (3.14159265358979323846f * diameter_m);
+		// motor_rpm_command_scale corrects the STM32 RPM-scale error (see
+		// ActuatorConfig). It is applied only here, on the speed->RPM path, not
+		// to wheel_rpm_override: the search-launch boost is an empirical max
+		// kick, not a speed target, and its release is speed-gated by OTOS, so
+		// scaling it would only weaken the launch.
+		const float rpm = speed_mps * 60.0f /
+			(3.14159265358979323846f * diameter_m) *
+			config_.motor_rpm_command_scale;
 		const float maximum_rpm = static_cast<float>(
 			std::clamp<std::uint16_t>(config_.maximum_wheel_rpm, 1,
 				std::numeric_limits<std::int16_t>::max()));
