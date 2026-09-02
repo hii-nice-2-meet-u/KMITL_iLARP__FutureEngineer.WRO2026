@@ -10,6 +10,7 @@
 #include "lidar_processor.hpp"
 #include "navigation_controller.hpp"
 #include "otos.hpp"
+#include "run_metadata.hpp"
 
 namespace open_challenge {
 
@@ -143,10 +144,42 @@ inline navigation::NavigationConfig make_navigation_config() {
 	return config;
 }
 
+// LiDAR line-fitting / clustering thresholds for LidarProcessor::process().
+// Named so the values that shape the whole wall/obstacle geometry pipeline are
+// tunable in one place and can be recorded in run_meta.json, rather than being
+// magic numbers at the call site.
+struct LidarProcessParams {
+	std::size_t min_segment_point{4};
+	float max_line_error_m{0.035f};
+	float max_point_gap_m{0.12f};
+	float max_angle_diff_deg{5.0f};
+	float max_collinear_error_m{0.04f};
+	float max_segment_gap_m{0.10f};
+};
+
+inline const LidarProcessParams &lidar_process_params() {
+	static const LidarProcessParams params{};
+	return params;
+}
+
 inline lidar::ProcessedLidarData process_scan(lidar::LidarProcessor &processor,
 	const TimedLidarData &scan, float wall_correction_rad) {
-	return processor.process(
-		scan, wall_correction_rad, 4, 0.035f, 0.12f, 5.0f, 0.04f, 0.10f);
+	const LidarProcessParams &p = lidar_process_params();
+	return processor.process(scan, wall_correction_rad, p.min_segment_point,
+		p.max_line_error_m, p.max_point_gap_m, p.max_angle_diff_deg,
+		p.max_collinear_error_m, p.max_segment_gap_m);
+}
+
+inline logging::JsonObject lidar_process_params_json(
+	const LidarProcessParams &p) {
+	logging::JsonObject object;
+	object.add_unsigned("min_segment_point", p.min_segment_point)
+		.add_number("max_line_error_m", p.max_line_error_m)
+		.add_number("max_point_gap_m", p.max_point_gap_m)
+		.add_number("max_angle_diff_deg", p.max_angle_diff_deg)
+		.add_number("max_collinear_error_m", p.max_collinear_error_m)
+		.add_number("max_segment_gap_m", p.max_segment_gap_m);
+	return object;
 }
 
 inline const char *mode_name(navigation::NavigationMode mode) {

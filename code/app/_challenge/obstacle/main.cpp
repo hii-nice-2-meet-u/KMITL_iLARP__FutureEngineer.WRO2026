@@ -152,7 +152,10 @@ int main(int, char **argv) {
 			"perception_config",
 			obstacle_challenge::perception_config_json(perception_config))
 		.add_object("obstacle_config",
-			obstacle_challenge::obstacle_config_json(obstacle_config));
+			obstacle_challenge::obstacle_config_json(obstacle_config))
+		.add_object("lidar_process_params",
+			open_challenge::lidar_process_params_json(
+				open_challenge::lidar_process_params()));
 	if (!logging::write_run_metadata(run_directory, run_metadata)) {
 		std::cerr << "Cannot write run_meta.json; refusing unattributed run\n";
 		actuators.close();

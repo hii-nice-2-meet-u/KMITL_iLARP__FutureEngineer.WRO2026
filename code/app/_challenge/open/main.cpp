@@ -125,6 +125,9 @@ int main(int argc, char **argv) {
 		navigation_config, otos_scalars.linear, otos_scalars.angular);
 	run_metadata.add_object("actuator_config",
 		open_challenge::actuator_config_json(actuator_config));
+	run_metadata.add_object("lidar_process_params",
+		open_challenge::lidar_process_params_json(
+			open_challenge::lidar_process_params()));
 	if (!logging::write_run_metadata(run_directory, run_metadata)) {
 		std::cerr << "Cannot write run_meta.json; refusing unattributed run\n";
 		actuators.close();
