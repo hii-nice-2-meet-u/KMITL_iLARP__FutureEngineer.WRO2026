@@ -68,7 +68,8 @@ int main(int argc, char **argv) {
 
 	std::cout
 		<< "Open Challenge main2: LAP 1 LEARN, LAPS 2-3 REPLAY, SPI ACTIVE\n"
-		<< "Drive=M1 +RPM, M2 -RPM, wheel diameter="
+		<< "Drive=twin N20 (mirrored, common input; shafts M1/M2 turn "
+		   "opposite for one command), wheel diameter="
 		<< actuator_config.wheel_diameter_m
 		<< "m, max=" << actuator_config.maximum_wheel_rpm
 		<< " RPM, servo pulse=" << actuator_config.servo_min_pulse_us << "-"

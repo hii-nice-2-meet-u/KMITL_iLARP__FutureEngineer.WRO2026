@@ -20,14 +20,17 @@ struct ActuatorConfig {
 	float wheel_diameter_m{0.053f};
 	std::uint16_t maximum_wheel_rpm{1500};
 
-	// Pi-side compensation for the STM32 RPM scale. The firmware turns a
-	// commanded RPM into ~1.75x the intended ground speed (measured: wheel is
-	// 53.5 mm so it is not the wheel; OTOS is off only -8.7% so it is not the
-	// sensor -- see docs/audit/HARDWARE_CHECKS.md and VEHICLE_MECHANICS_REVIEW).
-	// Pre-scaling the RPM command corrects the dominant gain without reflashing
-	// the STM32. A single scalar cannot remove the measured NORMAL(~1.86)/
-	// TURNING(~1.51) spread -- that low-speed nonlinearity needs the firmware or
-	// per-mode handling later. 1.0 = no compensation.
+	// Pi-side compensation for the STM32 RPM scale. A commanded RPM produces
+	// ~1.75x the intended ground speed (wheel measured 53.5 mm, so not the
+	// wheel; OTOS off only -8.7%, so not the sensor -- see
+	// docs/audit/HARDWARE_CHECKS.md and VEHICLE_MECHANICS_REVIEW).
+	//
+	// PROVISIONAL: 0.571 = 1/1.75 is a SINGLE-POINT correction fitted to one
+	// operating point, NOT an identified gain. The command->speed relation is
+	// not a pure scalar -- the NORMAL(~1.86)/TURNING(~1.51) spread shows a
+	// steering-angle-dependent term a scalar cannot remove. Replace with a
+	// measured model once M-3c/M-7 land (see MOTION_MODEL_UNIFIED_PLAN.md).
+	// 1.0 = no compensation.
 	float motor_rpm_command_scale{1.0f};
 
 	std::uint16_t servo_min_pulse_us{950};
